@@ -24,6 +24,8 @@ import { calculatePipelineMetrics } from "../../shared/crm";
 import { CardSkeleton, DashboardSkeleton } from "../components/Skeleton";
 
 export default function Dashboard() {
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("pipeline");
   const [isLoading, setIsLoading] = useState(true);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -31,6 +33,7 @@ export default function Dashboard() {
   const [driveFiles, setDriveFiles] = useState<any[]>([]);
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [syncLogs, setSyncLogs] = useState<any[]>([]);
+  const [devEmail, setDevEmail] = useState("");
 
   // Selected lead for AI audit
   const [auditLeadId, setAuditLeadId] = useState("");
@@ -52,18 +55,31 @@ export default function Dashboard() {
     status: "NEW" as LeadStatus
   });
 
-  const loadBackendData = async () => {
+  const loadBackendData = async (authToken: string) => {
     try {
-      // 1. Fetch leads and tasks from backend sync endpoint (GET exposes both)
-      const response = await fetch("/api/sync");
-      if (!response.ok) throw new Error("Sync GET failed");
-      const result = await response.json();
-      if (result.success && result.data) {
-        setLeads(result.data.leads || []);
-        setTasks(result.data.tasks || []);
+      // 1. Fetch leads
+      const leadsResponse = await fetch("/api/leads", {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      const leadsResult = await leadsResponse.json();
+      if (leadsResult.success) {
+        setLeads(leadsResult.data || []);
+      } else {
+        throw new Error(leadsResult.error?.message || "Leads GET failed");
+      }
+
+      // 2. Fetch tasks
+      const tasksResponse = await fetch("/api/tasks", {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      const tasksResult = await tasksResponse.json();
+      if (tasksResult.success) {
+        setTasks(tasksResult.data || []);
+      } else {
+        throw new Error(tasksResult.error?.message || "Tasks GET failed");
       }
     } catch (error) {
-      console.warn("Backend API offline, loading default mock data:", error);
+      console.warn("Backend API offline or failed, loading default mock data:", error);
       // Fallback mock dataset
       setLeads([
         {
@@ -141,9 +157,9 @@ export default function Dashboard() {
     }
 
     try {
-      // 2. Fetch Google Drive files
+      // 3. Fetch Google Drive files
       const driveResponse = await fetch("/api/drive", {
-        headers: { "Authorization": "Bearer mock_shubham_token" }
+        headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (!driveResponse.ok) throw new Error("Drive GET failed");
       const driveResult = await driveResponse.json();
@@ -179,19 +195,98 @@ export default function Dashboard() {
     ]);
   };
 
-  useEffect(() => {
-    loadBackendData().then(() => {
+  const loginWithToken = async (idToken: string) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      const result = await response.json();
+      if (result.success && result.data) {
+        const { token: jwt, user: profile } = result.data;
+        localStorage.setItem("autoreach_token", jwt);
+        localStorage.setItem("autoreach_user", JSON.stringify(profile));
+        setToken(jwt);
+        setUser(profile);
+        await loadBackendData(jwt);
+      } else {
+        alert(result.error?.message || "Authentication failed");
+      }
+    } catch (e: any) {
+      alert("Error logging in: " + e.message);
+    } finally {
       setIsLoading(false);
-    });
+    }
+  };
+
+  useEffect(() => {
+    // 1. Check local storage for existing session
+    const savedToken = localStorage.getItem("autoreach_token");
+    const savedUser = localStorage.getItem("autoreach_user");
+    if (savedToken && savedUser) {
+      setToken(savedToken);
+      const parsedUser = JSON.parse(savedUser);
+      setUser(parsedUser);
+      loadBackendData(savedToken).then(() => {
+        setIsLoading(false);
+      });
+    } else {
+      setIsLoading(false);
+    }
+
+    // 2. Load Google Identity Services script
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+
+    return () => {
+      // Clean up script
+      if (typeof document !== "undefined") {
+        const scripts = document.querySelectorAll('script[src="https://accounts.google.com/gsi/client"]');
+        scripts.forEach(s => s.remove());
+      }
+    };
   }, []);
+
+  // Initialize Google Sign-In button when script is ready and no token is present
+  useEffect(() => {
+    if (typeof window !== "undefined" && !token) {
+      const initGsi = () => {
+        if ((window as any).google?.accounts?.id) {
+          (window as any).google.accounts.id.initialize({
+            client_id: "977069610861-beq8i157adffc1cpe9u16r4qe75bggs1.apps.googleusercontent.com",
+            callback: (res: any) => {
+              loginWithToken(res.credential);
+            }
+          });
+          const btnParent = document.getElementById("google-signin-btn");
+          if (btnParent) {
+            (window as any).google.accounts.id.renderButton(btnParent, {
+              theme: "dark",
+              size: "large",
+              width: 360
+            });
+          }
+        } else {
+          // Retry in 100ms if script is not fully loaded
+          setTimeout(initGsi, 100);
+        }
+      };
+      initGsi();
+    }
+  }, [token]);
 
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLeadForm.name) return;
+    if (!newLeadForm.name || !token) return;
 
     const newLead: Lead = {
       id: `lead_${Math.random().toString(36).substring(2, 9)}`,
-      userId: "u_1",
+      userId: user?.id || "u_1",
       name: newLeadForm.name,
       email: newLeadForm.email || null,
       phone: newLeadForm.phone || null,
@@ -209,7 +304,7 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer mock_shubham_token"
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify(newLead)
       });
@@ -233,7 +328,7 @@ export default function Dashboard() {
   };
 
   const executeAiAudit = async (leadId: string) => {
-    if (!leadId) return;
+    if (!leadId || !token) return;
     const targetLead = leads.find(l => l.id === leadId);
     if (!targetLead) return;
 
@@ -245,7 +340,7 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer mock_shubham_token"
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify(targetLead)
       });
@@ -274,14 +369,14 @@ export default function Dashboard() {
   };
 
   const handleMessageDispatch = async () => {
-    if (!dispatchPhone || !dispatchText) return;
+    if (!dispatchPhone || !dispatchText || !token) return;
     setDispatchLoading(true);
     try {
       const response = await fetch(`/api/${dispatchChannel}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer mock_shubham_token"
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({ phone: dispatchPhone, text: dispatchText })
       });
@@ -301,9 +396,7 @@ export default function Dashboard() {
   // Filter leads by user role level
   const filteredLeads = leads.filter(lead => {
     if (roleFilter === "ALL") return true;
-    if (roleFilter === "u_1") return lead.userId === "u_1";
-    if (roleFilter === "u_2") return lead.userId === "u_2";
-    return true;
+    return lead.userId === roleFilter;
   });
 
   const metrics = calculatePipelineMetrics(filteredLeads);
@@ -316,6 +409,124 @@ export default function Dashboard() {
     WON: leads.filter(l => l.status === "WON").length,
     LOST: leads.filter(l => l.status === "LOST").length,
   };
+
+  if (isLoading) {
+    return (
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyItems: "center", justifyContent: "center", background: "#050505" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+          <RefreshCw size={36} style={{ animation: "spin 1.5s linear infinite", color: "var(--color-primary)" }} />
+          <span style={{ fontSize: "1.1rem", fontWeight: 500, color: "var(--color-text-secondary)" }}>Initializing workspace...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div style={{
+        display: "flex",
+        minHeight: "100vh",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "radial-gradient(circle at center, #111 0%, #050505 100%)",
+        padding: "20px"
+      }}>
+        <div className="glass-card" style={{
+          width: "100%",
+          maxWidth: "420px",
+          padding: "40px",
+          borderRadius: "var(--radius-lg)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "32px",
+          boxShadow: "0 20px 40px rgba(0,0,0,0.8)"
+        }}>
+          {/* Logo & Header */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", textAlign: "center" }}>
+            <div style={{
+              background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
+              width: "48px",
+              height: "48px",
+              borderRadius: "var(--radius-md)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <Sparkles size={24} style={{ color: "#FFF" }} />
+            </div>
+            <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-1px", marginTop: "8px" }}>AutoReach</h1>
+            <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9rem" }}>
+              Enterprise CRM & Communication Gateway
+            </p>
+          </div>
+
+          {/* Google Sign-In Button */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "center" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", textAlign: "center" }}>
+              Sign in with your corporate account
+            </span>
+            <div id="google-signin-btn" style={{ minHeight: "44px", width: "100%", display: "flex", justifyContent: "center" }} />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ flex: 1, height: "1px", background: "var(--color-border)" }} />
+            <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px" }}>or bypass</span>
+            <div style={{ flex: 1, height: "1px", background: "var(--color-border)" }} />
+          </div>
+
+          {/* Developer Bypass Login */}
+          <form 
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (devEmail.trim()) {
+                const mockToken = `mock_${devEmail.trim().toLowerCase()}`;
+                await loginWithToken(mockToken);
+              }
+            }}
+            style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", fontWeight: 500 }}>Developer Fallback (Email or Nickname)</label>
+              <input 
+                type="text"
+                placeholder="e.g. shubham"
+                value={devEmail}
+                onChange={(e) => setDevEmail(e.target.value)}
+                style={{
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-xs)",
+                  padding: "12px 14px",
+                  color: "#FFF",
+                  outline: "none",
+                  fontSize: "0.95rem"
+                }}
+                required
+              />
+            </div>
+            <button 
+              type="submit"
+              style={{
+                background: "transparent",
+                color: "#FFF",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-xs)",
+                padding: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "background var(--transition-normal)",
+                fontSize: "0.95rem"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              Developer Login Bypasser
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#050505" }}>
@@ -478,22 +689,52 @@ export default function Dashboard() {
           </button>
         </nav>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 8px", borderTop: "1px solid var(--color-border)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 8px", borderTop: "1px solid var(--color-border)", width: "100%" }}>
           <div style={{
             width: "32px",
             height: "32px",
             borderRadius: "var(--radius-pill)",
-            background: "#2A2A2A",
+            background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: "0.85rem",
-            fontWeight: 600
-          }}>SA</div>
-          <div>
-            <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>Shubham A.</div>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>Workspace Admin</div>
+            fontWeight: 600,
+            color: "#FFF"
+          }}>
+            {(user?.name || user?.email || "U").substring(0, 2).toUpperCase()}
           </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.name || user?.email?.split("@")[0] || "User"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user?.role || "Workspace Admin"}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem("autoreach_token");
+              localStorage.removeItem("autoreach_user");
+              setToken(null);
+              setUser(null);
+            }}
+            title="Log Out"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--color-text-muted)",
+              cursor: "pointer",
+              padding: "6px",
+              display: "flex",
+              alignItems: "center",
+              transition: "color 0.2s ease"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#FF4B4B"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--color-text-muted)"}
+          >
+            <Lucide.LogOut size={16} />
+          </button>
         </div>
       </aside>
 
@@ -516,7 +757,7 @@ export default function Dashboard() {
             fontSize: "0.85rem"
           }}>
             <RefreshCw size={14} className="text-success" style={{ animation: "spin 8s linear infinite" }} />
-            <span>Neon DB Connected</span>
+            <span>Turso Database Connected</span>
           </div>
         </header>
 
@@ -601,9 +842,8 @@ export default function Dashboard() {
                       outline: "none"
                     }}
                   >
-                    <option value="ALL">All Workspace Owners</option>
-                    <option value="u_1">Shubham A. (Admin)</option>
-                    <option value="u_2">Dev Partner (Member)</option>
+                    <option value="ALL">All Owners</option>
+                    <option value={user?.id || "u_1"}>Me ({user?.name || "User"})</option>
                   </select>
                 </div>
               </div>

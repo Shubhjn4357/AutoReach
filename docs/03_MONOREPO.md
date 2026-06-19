@@ -1,52 +1,35 @@
 # 03 Monorepo Specifications
 
-## Layout and Workspaces
+## Layout and Structure
 
-This repository is structured as a Turborepo monorepo with `pnpm` workspaces:
+This repository is structured as a consolidated project containing the mobile application, web application, and shared modules:
 
 ```
 root/
-├── apps/
-│   ├── mobile/         # Expo React Native App
-│   ├── dashboard/      # Next.js Dashboard App
-│   └── api/            # Next.js API Routes / Backend App
-├── packages/
-│   ├── ui/             # Reusable Design Primitives
-│   ├── db/             # Shared Neon PostgreSQL & Expo SQLite Schema definition
-│   ├── auth/           # Shared token validation and Google Sign-In logic
-│   ├── ai/             # Stateless AI agent adapters
-│   ├── whatsapp/       # WhatsApp payload definitions & API helpers
-│   ├── sms/            # SMS gateway triggers
-│   ├── notifications/  # Expo Push payload formatters
-│   ├── drive/          # Google Drive file upload/metadata handlers
-│   ├── redis/          # BullMQ & caching configurations
-│   ├── shared/         # General utility functions
-│   ├── hooks/          # React Native/Web shared hook primitives
-│   ├── types/          # TypeScript shared interface schemas
-│   └── config/         # Shared tailwind, eslint, and typescript configs
-├── services/
-│   ├── openwa/         # OpenWA instance container configurations
-│   ├── workers/        # BullMQ background task processor
-│   └── scheduler/      # Cron-job configurations
+├── docs/               # System and architecture design specifications
+├── mobile/             # Expo React Native App (for mobile sales/leads)
+├── web/                # Next.js Dashboard and API Route Handlers
+├── shared/             # Shared database models, OAuth, and integration helpers
+├── package.json        # Root configurations and scripts
+├── drizzle.config.ts   # Database schema configurations for Drizzle Kit
+└── tsconfig.json       # Root TypeScript configuration
 ```
 
-## Adding Workspace Dependencies
+## Shared Code Usage
 
-- Do not use absolute import paths outside the package.
-- To link one workspace package to another, add the target package in the destination `package.json`'s dependencies:
-  ```json
-  "dependencies": {
-    "@autoreach/db": "workspace:*"
-  }
-  }
-  ```
-- Always run `pnpm install` from the root directory.
+Shared code is located in the `shared/` directory at the root of the project. Instead of publishing package workspaces, the web application (`web/`) and mobile application (`mobile/`) import shared models and functions using direct relative paths:
 
-## Build Orchestration (Turborepo)
+```typescript
+import { verifyToken } from "../../../../shared/auth";
+import { db } from "../../../../shared/dbClient";
+import { leads } from "../../../../shared/db";
+```
 
-- Turborepo is configured via the root `turbo.json`.
-- Caches build output to speed up CI/CD runs.
-- Tasks are executed using:
-  - `pnpm dev` - Parallel local development servers.
-  - `pnpm build` - Parallel production compiling.
-  - `pnpm lint` - Static analysis runs.
+## Build Orchestration
+
+Root-level scripts in `package.json` let you start or build target platforms:
+- `pnpm web:dev` - Starts the Next.js local development server.
+- `pnpm web:build` - Compiles the Next.js production build.
+- `pnpm mobile:start` - Starts the Expo development bundler.
+- `pnpm lint` - Runs static code checking.
+

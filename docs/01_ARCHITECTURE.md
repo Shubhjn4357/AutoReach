@@ -9,15 +9,15 @@
         │                │                 │
         ▼                ▼                 ▼
  SQLite + Drizzle   Expo Auth      Expo Notifications
-        │
-        ▼
-     Next.js Backend
-        │
- ┌──────┼───────────────┬──────────────┐
- │      │               │              │
- ▼      ▼               ▼              ▼
-Neon   Redis        OpenWA       Google Drive
- DB     Queue         Service
+         │
+         ▼
+      Next.js Backend
+         │
+  ┌──────┼──────────────────────────────┐
+  │      │                              │
+  ▼      ▼                              ▼
+Turso  OpenWA                     Google Drive
+  DB   Service
 ```
 
 ## Platform Architecture Layers
@@ -28,18 +28,13 @@ Neon   Redis        OpenWA       Google Drive
    - State management split between **Zustand** (global layout/navigation/auth state) and **TanStack Query** (server sync cache).
    - Local device access for Secure Store (tokens), SMS (sending gateway capability), and Notifications.
 
-2. **Integration / Cache Layer (Redis)**:
-   - Redis manages background tasks, rate limiting, and temporary codes (OTP).
-   - **BullMQ** schedules message operations, sync jobs, and notifications.
-
-3. **Backend API Layer**:
+2. **Backend API Layer**:
    - Next.js API Routes and Route Handlers serving JSON payloads.
    - Uses Drizzle ORM to interface with the primary remote database.
+   - High-latency tasks are processed synchronously/inline in route handlers.
 
-4. **Database Layer (Primary Remote)**:
-   - Hosted on Neon PostgreSQL.
+3. **Database Layer (Primary Remote)**:
+   - Hosted on Turso (libSQL). Edge-replicated database dialect matching our local SQLite schemas.
 
-5. **Services Layer**:
-   - **OpenWA Service**: Self-contained Node app hosted on Railway acting as the WhatsApp Web automation controller.
-   - **Worker Service**: Background node workers processing tasks from BullMQ.
-   - **Scheduler**: Periodic cron trigger schedules.
+4. **Services Layer**:
+   - **OpenWA Service**: Self-contained Node app hosted on Hugging Face Spaces or Railway acting as the WhatsApp Web automation controller.

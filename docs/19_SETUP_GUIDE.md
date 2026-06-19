@@ -38,9 +38,6 @@ JWT_SECRET="your-secure-production-jwt-token-signing-key"
 GOOGLE_CLIENT_ID="your-google-oauth-client-id-here"
 GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret-here"
 
-# Redis Cache & Message queues (BullMQ)
-REDIS_URL="redis://username:password@redis-host.com:6379"
-
 # Local mobile client API URL
 EXPO_PUBLIC_API_URL="http://localhost:3000"
 ```
@@ -168,28 +165,53 @@ AutoReach uses Google Authentication for users and Drive storage. You must regis
 
 ---
 
-## Step 9: Backend & Services Deployment on Railway
+## Step 9: Backend & Services Deployment (Railway or 100% Free Tier)
 
-Railway hosts our Next.js API, OpenWA service, BullMQ Redis client, and Worker engines:
+For deployment, you can choose between a consolidated **Railway deployment** or a **100% Free Tier Stack** that costs nothing.
 
-1. **Deploy Redis Cache**:
-   - In your Railway dashboard, click **New** ➜ **Database** ➜ **Redis**.
-   - Get the `REDIS_URL` from the Redis reference variables.
-2. **Deploy Next.js Backend & Dashboard**:
+### Option A: Railway Deployment (Consolidated Paid/Developer Tier)
+
+Railway hosts our Next.js API and OpenWA service. Note that background worker/Redis processes are NOT required because Next.js handles all async processing/integration calls inline via Edge API Routes (e.g. Google Drive uploads, OpenWA triggers, and AI evaluations are performed directly/inline in response to requests or sync payloads).
+
+> [!WARNING]
+> If you have a separate background worker service configured on Railway (with a start command like `node services/workers/index.js`), you must delete or disable it. It will crash because the single-repo Next.js architecture does not use background worker files.
+
+1. **Deploy Next.js Backend & Dashboard**:
    - Click **New** ➜ **GitHub Repo** ➜ Choose the `AutoReach` repository.
    - Add the following environment variables:
      - `DATABASE_URL` (libsql://...)
      - `DATABASE_AUTH_TOKEN` (from Turso)
      - `JWT_SECRET` (secure hash key)
      - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-     - `REDIS_URL` (referencing the Redis database)
    - Railway will automatically detect Next.js and build it.
-3. **Deploy OpenWA Service (WhatsApp Bridge)**:
-   - Add a new service pointing to the OpenWA package/container.
+2. **Deploy OpenWA Service (WhatsApp Bridge)**:
+   - Add a new service pointing to the official OpenWA Docker Hub image: `openwa/wa-automate`.
    - OpenWA requires a Chrome/Puppeteer container environment and must be allocated at least **2GB RAM** for stable performance.
-4. **Deploy Background Workers**:
-   - Create a service pointing to `services/workers/` directory.
-   - Add same database, Redis, and secret environment variables.
+
+---
+
+### Option B: 100% Free Tier Stack (No Credit Card / Zero Cost)
+
+If you want to run the entire backend stack for free, you can distribute services across free tiers:
+
+1. **Host Next.js Web Console & API** ➜ **Vercel** (Free Hobby Tier)
+   - Follow **Step 10** to import your repository to Vercel. Vercel is completely free and automatically scales API routes and pages.
+2. **Host Database** ➜ **Turso** (Free Starter Tier)
+   - Turso provides a 100% free starter tier with up to 500 databases and 9GB of storage (more than enough for AutoReach).
+3. **Host OpenWA Bridge (WhatsApp API)** ➜ **Hugging Face Spaces** (100% Free Cloud Docker with 16GB RAM)
+   - Because Google Chrome/Puppeteer inside OpenWA requires at least 2GB of RAM, running it on standard free tiers (like Render or Koyeb, which limit free plans to 512MB) will trigger out-of-memory crashes.
+   - **How to host on the cloud for free**:
+     1. Sign up for a free account at [Hugging Face](https://huggingface.co/).
+     2. Create a new **Space**, choose **Docker** as the SDK, and select the **Blank** template.
+     3. Create a `Dockerfile` in your Space repository with the following contents:
+        ```dockerfile
+        FROM openwa/wa-automate
+        EXPOSE 7860
+        CMD ["--port", "7860", "--socket"]
+        ```
+        *(Hugging Face Spaces automatically exposes port `7860` for custom Docker containers).*
+     4. Save the file. Hugging Face will automatically build and launch the container on an Always-On instance with **16GB RAM and 2 vCPUs** for 100% free.
+     5. Set `OPENWA_API_URL` in your Vercel project settings to your Space URL: `https://<your-username>-<your-space-name>.hf.space`.
 
 ---
 
@@ -221,7 +243,7 @@ Deploying standalone mobile applications to the stores via EAS:
      "build": {
        "production": {
          "env": {
-           "EXPO_PUBLIC_API_URL": "https://your-backend-railway-url.com"
+           "ex": "https://your-backend-railway-url.com"
          }
        }
      }

@@ -1,34 +1,39 @@
 # 12 Backend Architecture Specifications
 
-## App Directory Structure (`apps/api` and `apps/dashboard`)
+## App Directory Structure (`web/app/api`)
 
 ```
-apps/api/
-├── app/
-│   └── api/
-│       ├── auth/
-│       ├── leads/
-│       ├── sync/
-│       ├── whatsapp/
-│       └── sms/
+web/app/api/
+├── auth/
+│   └── google/
+│       └── route.ts
+├── leads/
+│   └── route.ts
+├── sync/
+│   └── route.ts
+├── tasks/
+│   └── route.ts
+├── drive/
+│   └── route.ts
+├── whatsapp/
+│   └── route.ts
+├── sms/
+│   └── route.ts
+└── ai/
+    └── route.ts
 ```
 
-## Queue System (Redis + BullMQ)
+## Synchronous / Direct Backend Execution
 
-- All async workflows (AI generations, batch messaging, pushes) are scheduled via **BullMQ**.
-- **Workers Service** (`services/workers/`) listens to BullMQ channels:
-  - `whatsapp_queue`: Batches outbound WhatsApp requests.
-  - `sms_queue`: Formulates SMS payloads dispatched to target Android devices.
-  - `notifications_queue`: Resolves and sends payloads to Expo Notification Servers.
-  - `ai_queue`: Handles asynchronous LLM prompt evaluation.
+- Rather than using a multi-service message queue model, high-latency external service calls (such as OpenAI completions, Google Drive uploads, and sending notifications) are executed **inline/directly** within the Next.js API route handlers.
+- This ensures maximum architectural simplicity and compatibility with standard cloud platforms and serverless hobby tiers (like Vercel and Railway's single-service containers).
 
 ## WhatsApp Integration (OpenWA)
 
-- OpenWA is hosted as a dedicated Node service on Railway, isolated from the Next.js API.
+- OpenWA is hosted as an isolated Docker service on Hugging Face Spaces or Railway.
 - **Communication Flow**:
-  - The Mobile Client talks to the Next.js API.
-  - Next.js API puts a job in the Redis queue.
-  - Workers fetch the job and send a POST request containing JSON payloads directly to the OpenWA service.
+  - The client (Mobile or Dashboard) requests a WhatsApp automated action by POSTing to `/api/whatsapp`.
+  - The Next.js API handler receives the request and directly performs a POST request containing the JSON payload to the `OPENWA_API_URL`.
   - OpenWA drives WhatsApp Web via Puppeteer.
 
 ## SMS Architecture
@@ -36,5 +41,6 @@ apps/api/
 - Cost-efficient Android SMS Gateway (MVP stage):
   - Next.js API sends a push notification containing the message text and recipient phone number to the user's Android phone.
   - The Android App (running as an SMS Gateway client) intercepts the push and uses the native SIM card to dispatch the SMS.
-  - Status updates (Sent, Failed) are returned to the API callback url.
-- An abstraction layer is maintained to support future upgrades to Twilio/MSG91.
+  - Status updates (Sent, Failed) are returned to the API callback URL.
+- An abstraction layer is maintained in `shared/sms.ts` to support future upgrades to Twilio/MSG91.
+

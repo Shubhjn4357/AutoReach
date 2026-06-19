@@ -1,33 +1,15 @@
-# AutoReach Monorepo
+# AutoReach
 
 AutoReach is an offline-first, mobile-first CRM and business automation platform powered by local AI, structured integrations (WhatsApp, SMS, Google Drive), and automated sync queues.
 
 ## Directory Structure
 
-This monorepo utilizes **Turborepo** + **pnpm workspaces**:
+This repository contains the following components:
 
-- `apps/`
-  - `mobile/`: Expo React Native client application.
-  - `dashboard/`: Next.js admin frontend.
-  - `api/`: Next.js backend API routing.
-- `packages/`: Shareable workspace modules.
-  - `ui/`: Core design system components.
-  - `db/`: Database schemas, migrations, and client wrapper (Drizzle ORM for Turso & SQLite).
-  - `auth/`: Google OAuth & JWT authentication helpers.
-  - `ai/`: Modular, stateless AI agent helpers.
-  - `whatsapp/`: OpenWA interface wrappers.
-  - `sms/`: Android SMS Gateway wrapper/adapters.
-  - `notifications/`: Push notification handlers.
-  - `drive/`: Google Drive API integration.
-  - `redis/`: Redis client and helper queues (BullMQ).
-  - `analytics/`: Business analytics computations.
-  - `calendar/`: Google / local calendar sync.
-  - `crm/`: Core lead/customer relationship business logic.
-  - `shared/`: Shared utilities, types, config.
-- `services/`: Specialized microservices.
-  - `openwa/`: Dedicated Railway service hosting the WhatsApp Web bridge.
-  - `workers/`: Background queue processing jobs.
-  - `scheduler/`: Event and cron scheduling.
+- `web/`: Next.js web application providing the Admin Console (dashboard) and Backend API endpoints.
+- `mobile/`: Expo React Native client application.
+- `shared/`: Shared database schemas, auth validations, and service integration helpers.
+- `docs/`: System blueprints and setup/deployment guides.
 
 ## Getting Started
 
@@ -37,14 +19,15 @@ This monorepo utilizes **Turborepo** + **pnpm workspaces**:
    ```
 
 2. **Start Dev Environment**:
-   ```bash
-   pnpm dev
-   ```
+   - Start the Web Dashboard/API server:
+     ```bash
+     pnpm web:dev
+     ```
+   - Start the Expo Mobile bundler:
+     ```bash
+     pnpm mobile:start
+     ```
 
-3. **Build All Apps**:
-   ```bash
-   pnpm build
-   ```
 
 ## Development Standards
 
@@ -61,7 +44,7 @@ Please refer to the `docs/` folder for comprehensive blueprints and specificatio
 - [09_DESIGN_TOKENS.md](docs/09_DESIGN_TOKENS.md) - Shared design tokens
 - [10_COMPONENT_LIBRARY.md](docs/10_COMPONENT_LIBRARY.md) - UI package primitives
 - [11_MOBILE_ARCHITECTURE.md](docs/11_MOBILE_ARCHITECTURE.md) - Expo client structure
-- [12_BACKEND_ARCHITECTURE.md](docs/12_BACKEND_ARCHITECTURE.md) - Next.js APIs, BullMQ, Redis configs
+- [12_BACKEND_ARCHITECTURE.md](docs/12_BACKEND_ARCHITECTURE.md) - Next.js APIs and Direct/Inline Integration flow
 - [13_INFRASTRUCTURE.md](docs/13_INFRASTRUCTURE.md) - Hosting specifications (Vercel, Railway, Turso)
 - [14_SECURITY.md](docs/14_SECURITY.md) - Encryption, OAuth scopes, secure storage rules
 - [15_CODE_STANDARDS.md](docs/15_CODE_STANDARDS.md) - Coding rules & ESLint/Prettier setup

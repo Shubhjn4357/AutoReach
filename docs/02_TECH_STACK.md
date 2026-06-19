@@ -18,10 +18,9 @@ The technology stack is unified to minimize contextual overhead and promote shar
 
 ## Backend (Next.js API & Services)
 - **Framework**: Next.js API Routes / Route Handlers, Node.js.
-- **Database ORM**: Drizzle ORM (PostgreSQL driver).
-- **Authentication**: JWT token verify and session management.
-- **Caching & Queuing**: Redis, BullMQ.
-- **Workers**: Dedicated Railway node service + Cron workers.
+- **Database ORM**: Drizzle ORM (libSQL / SQLite driver).
+- **Authentication**: JWT token verification and session management.
+
 
 ## External integrations
 - **WhatsApp**: OpenWA hosted on Railway.

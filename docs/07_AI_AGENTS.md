@@ -2,23 +2,17 @@
 
 ## Architecture Principles
 
-- **Highly Modular**: Each AI function must reside in its own package/module under `packages/ai`.
+- **Highly Modular**: Each AI function must reside in its own module under `shared/`.
 - **Stateless Execution**: Agents must not maintain persistent in-memory session states. All context (user data, historical messages, active schemas) must be explicitly fed as parameters to the execution call.
-- **Queue-driven**: High-latency AI calls must execute asynchronously. The mobile or dashboard application requests an operation, which gets pushed onto the Redis/BullMQ AI Queue, processed by a worker, and returned via WebSockets or Push Notifications.
+- **API-driven**: The mobile or dashboard application requests an operation via Next.js API routes (e.g. `/api/ai`), which processes the OpenAI or rule-based completion directly and returns the response payload.
 
 ## Modular Components
 
-- **CRM Agent**: Processes lead profiles, scoring, and auto-enrichment.
-- **Sales Agent**: Handles product catalog recommendations and deal pipeline adjustments.
-- **Reminder Agent**: Decides when and how (SMS, WhatsApp, Email) to alert the user/customer.
-- **Email Agent**: Drafts contextual emails based on deal state.
-- **WhatsApp Agent & SMS Agent**: Parsers that inspect incoming texts and propose immediate quick replies.
-- **Analytics Agent**: Runs calculations and structures reports from Neon DB logs.
-- **Calendar & Scheduler Agent**: Formulates cron expressions and books Google Calendar slots.
-- **Knowledge Agent**: Performs vector searches across uploaded company documentation.
-- **Workflow Agent**: Maps conditions to automated actions (e.g. "If lead is cold for 7 days, trigger WhatsApp notification").
+- **CRM Lead Scoring Agent** (`shared/ai.ts`): Processes lead profiles, scoring, and auto-enrichment, assigning grades and proposing immediate WhatsApp/SMS quick-reply text drafts.
+- **Google Drive Integration**: Handles storage sync and metadata archiving for files.
 
 ## Error Resilience
 
 - AI service calls should implement retry logic (max 3 attempts).
-- Fallback mock responses must be available to prevent client crashes in case LLM APIs are offline.
+- Fallback mock/rule-based heuristics must be available to prevent client crashes and allow offline/local development without LLM API keys.
+
