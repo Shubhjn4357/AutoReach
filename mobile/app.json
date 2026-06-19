@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "AutoReach",
+    "slug": "autoreach-single-repo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "autoreach",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shubhjn.autoreach"
+    },
+    "android": {
+      "package": "com.shubhjn.autoreach"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4db1dd55-0805-4ecb-bdf3-bb41c471d3fb"
+      }
+    }
+  }
+}

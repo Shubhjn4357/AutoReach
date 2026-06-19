@@ -38,3 +38,7 @@ Thumbs.db
 .vscode/
 .idea/
 .gemini/
+
+# Generated native directories
+mobile/android/
+mobile/ios/
