@@ -4,7 +4,6 @@ import { Stack } from "expo-router";
 import { initDb } from "../services/db";
 import { bootstrapStore } from "../services/store";
 import * as SecureStore from "expo-secure-store";
-import "../global.css";
 
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);

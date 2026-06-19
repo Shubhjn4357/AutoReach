@@ -60,12 +60,13 @@ jobs:
           ./gradlew assembleRelease
 
       - name: Sign Release APK
-        if: ${{ secrets.ANDROID_KEYSTORE != '' }}
         env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        if: ${{ env.ANDROID_KEYSTORE != '' }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > mobile/android/app/release.keystore
           APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)

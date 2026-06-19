@@ -1,0 +1,39 @@
+diff --git a/dist/commonjs/metro/metro-transformer.js b/dist/commonjs/metro/metro-transformer.js
+index f25317e9b8896e6a519b8cad1242c363e34b88bf..3dd3fbc57867b3f71f7f1afdfc589677ade72aff 100644
+--- a/dist/commonjs/metro/metro-transformer.js
++++ b/dist/commonjs/metro/metro-transformer.js
+@@ -9,7 +9,7 @@ var _index = require("../compiler/index.js");
+ var _injectionCode = require("./injection-code.js");
+ const worker =
+ // eslint-disable-next-line @typescript-eslint/no-require-imports
+-require(_metroConfig.unstable_transformerPath);
++require(_metroConfig.unstable_transformerPath || "metro-transform-worker");
+ async function transform(config, projectRoot, filePath, data, options) {
+   const isCss = options.type !== "asset" && /\.(s?css|sass)$/.test(filePath);
+   if (options.platform === "web" || !isCss) {
+diff --git a/dist/module/metro/metro-transformer.js b/dist/module/metro/metro-transformer.js
+index 327ea81842b1f66bd3680b8ada06a09847196e49..abd5b5c344e882a646f8445a50ea9b24db978856 100644
+--- a/dist/module/metro/metro-transformer.js
++++ b/dist/module/metro/metro-transformer.js
+@@ -5,7 +5,7 @@ import { compile } from "../compiler/index.js";
+ import { getNativeInjectionCode } from "./injection-code.js";
+ const worker =
+ // eslint-disable-next-line @typescript-eslint/no-require-imports
+-require(unstable_transformerPath);
++require(unstable_transformerPath || "metro-transform-worker");
+ export async function transform(config, projectRoot, filePath, data, options) {
+   const isCss = options.type !== "asset" && /\.(s?css|sass)$/.test(filePath);
+   if (options.platform === "web" || !isCss) {
+diff --git a/src/metro/metro-transformer.ts b/src/metro/metro-transformer.ts
+index d77946b0bf26f819648522c10c5bab169cc85190..2d76f121a3815143781dd68b42709122c8b8ea6f 100644
+--- a/src/metro/metro-transformer.ts
++++ b/src/metro/metro-transformer.ts
+@@ -10,7 +10,7 @@ import { getNativeInjectionCode } from "./injection-code";
+ 
+ const worker =
+   // eslint-disable-next-line @typescript-eslint/no-require-imports
+-  require(unstable_transformerPath) as typeof import("metro-transform-worker");
++  require(unstable_transformerPath || "metro-transform-worker") as typeof import("metro-transform-worker");
+ 
+ export async function transform(
+   config: JsTransformerConfig,
