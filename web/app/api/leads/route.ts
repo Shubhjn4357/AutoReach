@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "../../../../shared/auth";
 import { leadsInMemoryDb } from "../inMemoryDb";

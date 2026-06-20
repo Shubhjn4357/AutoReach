@@ -1,13 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { initDb } from "../services/db";
-import { bootstrapStore } from "../services/store";
-import * as SecureStore from "expo-secure-store";
-import { ThemeProvider, useTheme } from "../tw/index";
+import { bootstrapStore, useAppStore } from "../services/store";
+import { ThemeProvider, useTheme } from "../services/theme";
 
 function InnerRootLayout() {
   const { colors } = useTheme();
+  const store = useAppStore();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (store.token === null) {
+      router.replace("/auth");
+    }
+  }, [store.token]);
+
   return (
     <Stack screenOptions={{
       headerStyle: { backgroundColor: colors.surface },
@@ -16,6 +24,8 @@ function InnerRootLayout() {
       contentStyle: { backgroundColor: colors.bg }
     }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="contact/[id]" options={{ title: "Contact Details" }} />
     </Stack>
   );
 }
@@ -27,10 +37,6 @@ export default function RootLayout() {
     async function bootstrap() {
       try {
         await initDb();
-        const currentToken = await SecureStore.getItemAsync("auth_token");
-        if (!currentToken) {
-          await SecureStore.setItemAsync("auth_token", "mock_shubham_token");
-        }
         await bootstrapStore();
         setDbReady(true);
       } catch (error) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Alert } from "react-native";
-import { View, Text, ScrollView, TextInput, Pressable } from "../../tw/index";
+import { Alert, StyleSheet, View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
 import { getQueuedOperations, getLocalLeads, getLocalTasks } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
@@ -8,6 +9,8 @@ import * as SecureStore from "expo-secure-store";
 
 export default function SettingsScreen() {
   const store = useAppStore();
+  const { colors, glassStyle, glassInputStyle } = useTheme();
+  
   const [syncQueueSize, setSyncQueueSize] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
@@ -60,8 +63,6 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Wipe local DB is mocked via simple message since we don't drop tables,
-              // but we can delete auth keys and clear Secure Store.
               await SecureStore.deleteItemAsync("auth_token");
               store.setToken(null);
               store.setUser(null);
@@ -76,90 +77,205 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-bg px-4 py-6">
-      
-      {/* Header */}
-      <View className="mb-6">
-        <Text className="text-white text-2xl font-bold tracking-tight">Settings</Text>
-        <Text className="text-text-secondary text-sm">System endpoints and sync utilities</Text>
-      </View>
-
-      {/* User Status Profile */}
-      <View className="bg-card border border-border p-4 rounded-xl mb-6">
-        <Text className="text-white font-bold text-base mb-2">User Profile</Text>
-        <View className="flex-row justify-between mb-2">
-          <Text className="text-text-secondary text-xs">Auth Identity:</Text>
-          <Text className="text-white text-xs font-semibold">{store.user?.email || "mock_shubham@example.com"}</Text>
-        </View>
-        <View className="flex-row justify-between mb-2">
-          <Text className="text-text-secondary text-xs">RBAC Privilege Role:</Text>
-          <Text className="text-primary text-xs font-bold">{store.user?.role || "ADMIN (Workspace Creator)"}</Text>
-        </View>
-        <View className="flex-row justify-between">
-          <Text className="text-text-secondary text-xs">Active SaaS Tier:</Text>
-          <Text className="text-success text-xs font-bold">ENTERPRISE TEAM (Unlimited)</Text>
-        </View>
-      </View>
-
-      {/* API Configuration */}
-      <View className="bg-card border border-border p-4 rounded-xl mb-6">
-        <Text className="text-white font-bold text-base mb-3">Backend Configuration</Text>
-        <Text className="text-text-secondary text-xs mb-2">Server Base API URL:</Text>
-        <TextInput
-          placeholder="API Url"
-          placeholderTextColor="#6B7280"
-          value={tempApiUrl}
-          onChangeText={setTempApiUrl}
-          className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-3"
-        />
-        <Pressable 
-          onPress={handleSaveApi}
-          className="bg-primary p-2.5 rounded-lg items-center"
-        >
-          <Text className="text-white font-bold text-xs">Apply Endpoint Changes</Text>
-        </Pressable>
-      </View>
-
-      {/* Database Statistics */}
-      <View className="bg-card border border-border p-4 rounded-xl mb-6">
-        <Text className="text-white font-bold text-base mb-3">Offline Statistics</Text>
-        <View className="flex-row justify-between mb-2 pb-2 border-b border-border/40">
-          <Text className="text-text-secondary text-xs">Local leads stored:</Text>
-          <Text className="text-white text-xs font-bold">{totalLeads}</Text>
-        </View>
-        <View className="flex-row justify-between mb-2 pb-2 border-b border-border/40">
-          <Text className="text-text-secondary text-xs">Local tasks checklist:</Text>
-          <Text className="text-white text-xs font-bold">{totalTasks}</Text>
-        </View>
-        <View className="flex-row justify-between mb-4">
-          <Text className="text-text-secondary text-xs">Queued updates pending sync:</Text>
-          <Text className="text-warning text-xs font-bold">{syncQueueSize}</Text>
+    <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.bg }]}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>System endpoints and sync utilities</Text>
         </View>
 
-        <View className="flex-row gap-3">
+        {/* User Status Profile */}
+        <View style={[glassStyle, styles.sectionCard]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>User Profile</Text>
+          <View style={styles.row}>
+            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Auth Identity:</Text>
+            <Text style={[styles.rowValue, { color: colors.text }]}>{store.user?.email || "mock_shubham@example.com"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>RBAC Privilege Role:</Text>
+            <Text style={[styles.rowValue, styles.primaryRole, { color: colors.primary }]}>{store.user?.role || "ADMIN (Workspace Creator)"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Active SaaS Tier:</Text>
+            <Text style={[styles.rowValue, styles.successTier, { color: colors.success }]}>ENTERPRISE TEAM (Unlimited)</Text>
+          </View>
+        </View>
+
+        {/* API Configuration */}
+        <View style={[glassStyle, styles.sectionCard]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Backend Configuration</Text>
+          <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Server Base API URL:</Text>
+          <TextInput
+            placeholder="API Url"
+            placeholderTextColor={colors.textMuted}
+            value={tempApiUrl}
+            onChangeText={setTempApiUrl}
+            style={[glassInputStyle, styles.input]}
+          />
           <Pressable 
-            onPress={handleManualSync}
-            disabled={syncing}
-            className="bg-primary/20 border border-primary/40 p-3 rounded-lg flex-1 items-center"
+            onPress={handleSaveApi}
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
           >
-            <Text className="text-primary font-bold text-xs">
-              {syncing ? "Synchronizing..." : "Trigger Manual Sync"}
-            </Text>
-          </Pressable>
-
-          <Pressable 
-            onPress={handleWipeData}
-            className="bg-danger/20 border border-danger/40 p-3 rounded-lg flex-1 items-center"
-          >
-            <Text className="text-danger font-bold text-xs">Purge Database Cache</Text>
+            <Text style={styles.applyBtnText}>Apply Endpoint Changes</Text>
           </Pressable>
         </View>
-      </View>
-      
-      <View className="items-center mb-10 mt-4">
-        <Text className="text-text-muted text-3xs">AutoReach Client Build v1.0.0 (Production-Level Engine)</Text>
-      </View>
 
-    </ScrollView>
+        {/* Database Statistics */}
+        <View style={[glassStyle, styles.sectionCard]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Offline Statistics</Text>
+          <View style={[styles.statRow, { borderBottomColor: `${colors.border}4D` }]}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Local leads stored:</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{totalLeads}</Text>
+          </View>
+          <View style={[styles.statRow, { borderBottomColor: `${colors.border}4D` }]}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Local tasks checklist:</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{totalTasks}</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Queued updates pending sync:</Text>
+            <Text style={[styles.statValue, { color: colors.warning }]}>{syncQueueSize}</Text>
+          </View>
+
+          <View style={styles.actionButtonsRow}>
+            <Pressable 
+              onPress={handleManualSync}
+              disabled={syncing}
+              style={[styles.syncBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
+            >
+              <Text style={[styles.syncBtnText, { color: colors.primary }]}>
+                {syncing ? "Synchronizing..." : "Trigger Manual Sync"}
+              </Text>
+            </Pressable>
+
+            <Pressable 
+              onPress={handleWipeData}
+              style={[styles.purgeBtn, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}4D`, borderWidth: 1 }]}
+            >
+              <Text style={[styles.purgeBtnText, { color: colors.danger }]}>Purge Database Cache</Text>
+            </Pressable>
+          </View>
+        </View>
+        
+        <View style={styles.footerContainer}>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>AutoReach Client Build v1.0.0 (Production-Level Engine)</Text>
+        </View>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContainer: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  headerContainer: {
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  sectionCard: {
+    padding: 16,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  rowLabel: {
+    fontSize: 12,
+  },
+  rowValue: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  primaryRole: {
+    fontWeight: "bold",
+  },
+  successTier: {
+    fontWeight: "bold",
+  },
+  inputLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  input: {
+    marginBottom: 12,
+  },
+  applyBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  statRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  statLabel: {
+    fontSize: 12,
+  },
+  statValue: {
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  actionButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  syncBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  syncBtnText: {
+    fontWeight: "bold",
+    fontSize: 12,
+  },
+  purgeBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  purgeBtnText: {
+    fontWeight: "bold",
+    fontSize: 12,
+  },
+  footerContainer: {
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  footerText: {
+    fontSize: 9,
+  },
+});

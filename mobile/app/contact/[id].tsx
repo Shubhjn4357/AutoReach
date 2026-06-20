@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Alert, ActivityIndicator, Modal } from "react-native";
+import { Alert, ActivityIndicator, Modal, StyleSheet, View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View, Text, ScrollView, TextInput, Pressable, useTheme } from "../../tw/index";
+import { useTheme } from "../../services/theme";
 import { getDb, updateLocalLead, deleteLocalLead } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { recommendNextStep } from "../../shared/crm";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 
-// Type definitions to replace 'any'
 interface AiAuditResult {
   score: number;
   grade: string;
@@ -71,7 +71,7 @@ interface LeadFormData {
 export default function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { colors, theme } = useTheme();
+  const { colors, glassStyle, glassInputStyle } = useTheme();
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
@@ -264,99 +264,101 @@ export default function ContactDetailScreen() {
 
   if (loading || !lead) {
     return (
-      <View className="flex-1 bg-bg flex-center">
+      <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-bg">
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Top Header Navigation Bar */}
-      <View className="bg-surface border-b border-border px-4 py-4 flex-row justify-between items-center rounded-b-2xl shadow-xl pt-12">
-        <Pressable onPress={() => router.back()} className="flex-row items-center gap-1 p-1">
+      <SafeAreaView edges={["top"]} style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
-          <Text className="text-white text-sm font-semibold">Back</Text>
+          <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
         </Pressable>
-        <Text className="text-white text-base font-bold">Profile Details</Text>
-        <Pressable onPress={throttledDelete} className="p-1">
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Profile Details</Text>
+        <Pressable onPress={throttledDelete} style={styles.deleteHeaderBtn}>
           <Ionicons name="trash-outline" size={20} color={colors.danger} />
         </Pressable>
-      </View>
+      </SafeAreaView>
 
-      <ScrollView className="flex-1 px-4 py-4" contentContainerClassName="pb-12">
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
         {/* Profile Card */}
-        <View className="bg-card border border-border p-5 rounded-2xl mb-4 shadow-md">
-          <View className="flex-row justify-between items-center mb-4">
-            <View className="flex-row items-center gap-3">
-              <View className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex-center">
-                <Text className="text-primary font-bold text-lg">
+        <View style={[glassStyle, styles.profileCard]}>
+          <View style={styles.profileHeader}>
+            <View style={styles.profileHeaderLeft}>
+              <View style={[styles.avatar, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}33` }]}>
+                <Text style={[styles.avatarText, { color: colors.primary }]}>
                   {lead.name.substring(0, 2).toUpperCase()}
                 </Text>
               </View>
               <View>
-                <Text className="text-white text-lg font-bold">{lead.name}</Text>
-                <Text className="text-text-muted text-xs">ID: {lead.id}</Text>
+                <Text style={[styles.leadName, { color: colors.text }]}>{lead.name}</Text>
+                <Text style={[styles.leadId, { color: colors.textMuted }]}>ID: {lead.id}</Text>
               </View>
             </View>
-            <Text className="bg-primary/10 text-primary text-2xs px-2.5 py-1 rounded-full font-bold">
-              {lead.status}
-            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}1A` }]}>
+              <Text style={[styles.statusBadgeText, { color: colors.primary }]}>
+                {lead.status}
+              </Text>
+            </View>
           </View>
 
           {/* Details list */}
-          <View className="bg-bg border border-border/60 p-4 rounded-xl gap-3">
-            <View className="flex-row justify-between items-center">
-              <Text className="text-text-secondary text-xs">Deal Valuation:</Text>
-              <Text className="text-white text-sm font-bold">${lead.value.toLocaleString()}</Text>
+          <View style={[styles.detailsBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Deal Valuation:</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>${lead.value.toLocaleString()}</Text>
             </View>
-            <View className="flex-row justify-between items-center">
-              <Text className="text-text-secondary text-xs">Phone number:</Text>
-              <Text className="text-white text-xs font-semibold">{lead.phone || "Not provided"}</Text>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Phone number:</Text>
+              <Text style={[styles.detailValue, styles.detailValueText, { color: colors.text }]}>{lead.phone || "Not provided"}</Text>
             </View>
-            <View className="flex-row justify-between items-center">
-              <Text className="text-text-secondary text-xs">Email address:</Text>
-              <Text className="text-white text-xs">{lead.email || "Not provided"}</Text>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Email address:</Text>
+              <Text style={[styles.detailValue, styles.detailValueText, { color: colors.text }]}>{lead.email || "Not provided"}</Text>
             </View>
-            <View className="border-t border-border/40 pt-3">
-              <Text className="text-text-secondary text-2xs uppercase tracking-wide font-semibold mb-1">Notes</Text>
-              <Text className="text-text-secondary text-xs italic">{lead.notes || "No notes written."}</Text>
+            <View style={[styles.notesSection, { borderTopColor: `${colors.border}66` }]}>
+              <Text style={[styles.notesHeaderLabel, { color: colors.textSecondary }]}>Notes</Text>
+              <Text style={[styles.notesText, { color: colors.textSecondary }]}>{lead.notes || "No notes written."}</Text>
             </View>
           </View>
 
           {/* Direct Action Buttons */}
-          <View className="flex-row gap-3 mt-4">
+          <View style={styles.profileActions}>
             <Pressable 
               onPress={() => setEditModalVisible(true)}
-              className="bg-primary/10 border border-primary/30 flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2"
+              style={[styles.editProfileBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
             >
               <Ionicons name="create-outline" size={16} color={colors.primary} />
-              <Text className="text-primary text-xs font-bold">Edit Profile</Text>
+              <Text style={[styles.editProfileBtnText, { color: colors.primary }]}>Edit Profile</Text>
             </Pressable>
             <Pressable 
               onPress={throttledDelete}
-              className="bg-danger/10 border border-danger/30 flex-1 py-3 rounded-xl items-center flex-row justify-center gap-2"
+              style={[styles.deleteLeadBtn, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}4D`, borderWidth: 1 }]}
             >
               <Ionicons name="trash-outline" size={16} color={colors.danger} />
-              <Text className="text-danger text-xs font-bold">Delete Lead</Text>
+              <Text style={[styles.deleteLeadBtnText, { color: colors.danger }]}>Delete Lead</Text>
             </Pressable>
           </View>
         </View>
 
         {/* AI CRM Agent Panel */}
-        <View className="bg-primary/5 border border-primary/20 p-5 rounded-2xl shadow-md">
-          <View className="flex-row justify-between items-center mb-4">
-            <View className="flex-row items-center gap-2">
+        <View style={[glassStyle, styles.aiCard, { backgroundColor: `${colors.primary}0D`, borderColor: `${colors.primary}33` }]}>
+          <View style={styles.aiHeader}>
+            <View style={styles.aiHeaderLeft}>
               <Ionicons name="sparkles" size={18} color={colors.primary} />
-              <Text className="text-primary text-sm font-bold">Proactive AI CRM Audit</Text>
+              <Text style={[styles.aiTitle, { color: colors.primary }]}>Proactive AI CRM Audit</Text>
             </View>
             
             <Pressable 
               onPress={throttledAudit}
               disabled={aiLoading}
-              className="bg-primary/15 border border-primary/30 px-3 py-1.5 rounded-lg"
+              style={[styles.runAuditBtn, { backgroundColor: `${colors.primary}26`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
             >
-              <Text className="text-primary text-3xs font-bold">
+              <Text style={[styles.runAuditBtnText, { color: colors.primary }]}>
                 {aiLoading ? "Analyzing..." : "Run AI Audit"}
               </Text>
             </Pressable>
@@ -365,51 +367,51 @@ export default function ContactDetailScreen() {
           {aiLoading && <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />}
 
           {aiResult ? (
-            <View className="gap-4">
-              <View className="flex-row items-center gap-3 bg-bg border border-border p-3 rounded-xl">
-                <View className="bg-primary/20 w-12 h-12 rounded-xl items-center justify-center border border-primary/30">
-                  <Text className="text-primary text-xl font-black">{aiResult.grade}</Text>
+            <View style={styles.aiResultContainer}>
+              <View style={[styles.aiScoreRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                <View style={[styles.gradeAvatar, { backgroundColor: `${colors.primary}33`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}>
+                  <Text style={[styles.gradeText, { color: colors.primary }]}>{aiResult.grade}</Text>
                 </View>
-                <View className="flex-1">
-                  <Text className="text-white text-xs font-bold">Lead Score: {aiResult.score}/100</Text>
-                  <Text className="text-text-secondary text-2xs">{aiResult.summary}</Text>
+                <View style={styles.aiSummaryContent}>
+                  <Text style={[styles.scoreTitle, { color: colors.text }]}>Lead Score: {aiResult.score}/100</Text>
+                  <Text style={[styles.summaryText, { color: colors.textSecondary }]}>{aiResult.summary}</Text>
                 </View>
               </View>
 
-              <View className="bg-bg border border-border p-3 rounded-xl">
-                <Text className="text-primary text-2xs font-bold mb-1">Suggested Next Step:</Text>
-                <Text className="text-text-secondary text-xs">{aiResult.suggestedAction}</Text>
+              <View style={[styles.aiActionBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                <Text style={[styles.boxLabel, { color: colors.primary }]}>Suggested Next Step:</Text>
+                <Text style={[styles.boxContentText, { color: colors.textSecondary }]}>{aiResult.suggestedAction}</Text>
               </View>
 
               {aiResult.proposedQuickReply && (
-                <View className="bg-bg border border-border p-3 rounded-xl">
-                  <Text className="text-accent text-2xs font-bold mb-1">Generated Draft Reply:</Text>
-                  <Text className="text-text-secondary text-xs italic mb-3">"{aiResult.proposedQuickReply}"</Text>
+                <View style={[styles.aiActionBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                  <Text style={[styles.boxLabel, { color: colors.accent }]}>Generated Draft Reply:</Text>
+                  <Text style={[styles.boxDraftText, { color: colors.textSecondary }]}>"{aiResult.proposedQuickReply}"</Text>
                   
-                  <View className="flex-row gap-2">
+                  <View style={styles.replyActions}>
                     <Pressable 
                       onPress={() => throttledSendMessage("whatsapp", aiResult?.proposedQuickReply || "")}
                       disabled={actionLoading}
-                      className="bg-success/20 border border-success/40 flex-1 py-2.5 rounded-xl items-center flex-row justify-center gap-1.5"
+                      style={[styles.dispatchBtn, { backgroundColor: `${colors.success}33`, borderColor: `${colors.success}66`, borderWidth: 1 }]}
                     >
                       <Ionicons name="logo-whatsapp" size={14} color={colors.success} />
-                      <Text className="text-success text-2xs font-bold">Send WhatsApp</Text>
+                      <Text style={[styles.dispatchBtnText, { color: colors.success }]}>Send WhatsApp</Text>
                     </Pressable>
                     <Pressable 
                       onPress={() => throttledSendMessage("sms", aiResult?.proposedQuickReply || "")}
                       disabled={actionLoading}
-                      className="bg-primary/20 border border-primary/40 flex-1 py-2.5 rounded-xl items-center flex-row justify-center gap-1.5"
+                      style={[styles.dispatchBtn, { backgroundColor: `${colors.primary}33`, borderColor: `${colors.primary}66`, borderWidth: 1 }]}
                     >
                       <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-                      <Text className="text-primary text-2xs font-bold">Send SMS</Text>
+                      <Text style={[styles.dispatchBtnText, { color: colors.primary }]}>Send SMS</Text>
                     </Pressable>
                   </View>
                 </View>
               )}
             </View>
           ) : (
-            <View className="py-6 items-center">
-              <Text className="text-text-secondary text-xs italic text-center">Run the AI audit to grade this contact and auto-generate follow-up scripts.</Text>
+            <View style={styles.aiEmptyState}>
+              <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>Run the AI audit to grade this contact and auto-generate follow-up scripts.</Text>
             </View>
           )}
         </View>
@@ -418,11 +420,11 @@ export default function ContactDetailScreen() {
       {/* Edit Contact Modal */}
       {editModalVisible && (
         <Modal transparent visible={editModalVisible} animationType="slide">
-          <View className="flex-1 flex-center bg-black/70 px-6">
-            <View className="bg-surface border border-border p-6 rounded-2xl w-full">
-              <View className="flex-row justify-between items-center mb-4">
-                <Text className="text-white text-lg font-bold">Edit Contact Details</Text>
-                <Pressable onPress={() => setEditModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Contact Details</Text>
+                <Pressable onPress={() => setEditModalVisible(false)} style={styles.closeBtn}>
                   <Ionicons name="close" size={24} color={colors.text} />
                 </Pressable>
               </View>
@@ -432,23 +434,23 @@ export default function ContactDetailScreen() {
                 placeholderTextColor={colors.textMuted}
                 value={formData.name}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, name: text }))}
-                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-3"
+                style={[glassInputStyle, styles.input]}
               />
 
-              <View className="mb-3">
+              <View style={styles.inputRow}>
                 <TextInput
                   placeholder="Valuation ($)"
                   placeholderTextColor={colors.textMuted}
                   value={formData.value}
                   onChangeText={(text) => setFormData(prev => ({ ...prev, value: text }))}
                   keyboardType="numeric"
-                  className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm w-full"
+                  style={[glassInputStyle, styles.input, { flex: 1 }]}
                 />
               </View>
 
-              <View className="mb-3">
-                <Text className="text-text-secondary text-3xs uppercase tracking-wide font-semibold mb-2 px-1">Status</Text>
-                <View className="flex-row gap-2" style={{ flexWrap: "wrap" }}>
+              <View style={styles.statusSelectContainer}>
+                <Text style={[styles.statusSelectLabel, { color: colors.textSecondary }]}>Status</Text>
+                <View style={styles.statusPillsRow}>
                   {(["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const).map((statusOption) => {
                     const isSelected = formData.status === statusOption;
                     let activeBg = colors.primary;
@@ -456,21 +458,23 @@ export default function ContactDetailScreen() {
                     if (statusOption === "LOST") activeBg = colors.danger;
                     if (statusOption === "QUALIFIED") activeBg = colors.primary;
                     if (statusOption === "CONTACTED") activeBg = colors.accent;
-                    
+
                     return (
                       <Pressable
                         key={statusOption}
                         onPress={() => setFormData(prev => ({ ...prev, status: statusOption }))}
-                        className="px-3 py-2 rounded-xl border border-transparent"
-                        style={
+                        style={[
+                          styles.statusPill,
                           isSelected
                             ? { backgroundColor: activeBg }
-                            : { backgroundColor: colors.bg, borderColor: colors.border }
-                        }
+                            : { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }
+                        ]}
                       >
-                        <Text 
-                          className={isSelected ? "text-white text-xs font-bold" : "text-text-secondary text-xs"}
-                          style={isSelected ? { color: "#FFFFFF" } : undefined}
+                        <Text
+                          style={[
+                            styles.statusPillText,
+                            isSelected ? { color: "#FFFFFF", fontWeight: "bold" } : { color: colors.textSecondary }
+                          ]}
                         >
                           {statusOption}
                         </Text>
@@ -486,7 +490,8 @@ export default function ContactDetailScreen() {
                 value={formData.email}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, email: text }))}
                 keyboardType="email-address"
-                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-3"
+                autoCapitalize="none"
+                style={[glassInputStyle, styles.input]}
               />
 
               <TextInput
@@ -495,12 +500,12 @@ export default function ContactDetailScreen() {
                 value={formData.phone}
                 onChangeText={(text) => setFormData(prev => ({ ...prev, phone: text }))}
                 keyboardType="phone-pad"
-                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-3"
+                style={[glassInputStyle, styles.input]}
               />
 
-              <View className="mb-1 flex-row justify-between items-center px-1">
-                <Text className="text-text-secondary text-3xs uppercase tracking-wide font-semibold">Notes Draft</Text>
-                <Text className="text-text-muted text-3xs">{debouncedNotes.length} chars (debounced)</Text>
+              <View style={styles.notesHeader}>
+                <Text style={[styles.notesHeaderLabel, { color: colors.textSecondary }]}>Notes Draft</Text>
+                <Text style={[styles.notesCharCount, { color: colors.textMuted }]}>{debouncedNotes.length} chars (debounced)</Text>
               </View>
               <TextInput
                 placeholder="Add notes..."
@@ -509,22 +514,21 @@ export default function ContactDetailScreen() {
                 onChangeText={(text) => setFormData(prev => ({ ...prev, notes: text }))}
                 multiline
                 numberOfLines={3}
-                style={{ textAlignVertical: "top" }}
-                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-5"
+                style={[glassInputStyle, styles.input, styles.multilineInput]}
               />
 
-              <View className="flex-row gap-3">
+              <View style={styles.modalActions}>
                 <Pressable 
                   onPress={() => setEditModalVisible(false)}
-                  className="bg-border/20 border border-border py-3 rounded-xl flex-1 items-center"
+                  style={[styles.modalCancelBtn, { borderColor: colors.border }]}
                 >
-                  <Text className="text-white font-bold text-sm">Cancel</Text>
+                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Cancel</Text>
                 </Pressable>
                 <Pressable 
                   onPress={throttledUpdate}
-                  className="bg-primary py-3 rounded-xl flex-1 items-center"
+                  style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
                 >
-                  <Text className="text-white font-bold text-sm">Save Changes</Text>
+                  <Text style={styles.modalSaveBtnText}>Save Changes</Text>
                 </Pressable>
               </View>
             </View>
@@ -534,3 +538,362 @@ export default function ContactDetailScreen() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 1,
+  },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    padding: 4,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  deleteHeaderBtn: {
+    padding: 4,
+  },
+  scrollContainer: {
+    padding: 16,
+    paddingBottom: 60,
+  },
+  profileCard: {
+    padding: 16,
+    marginBottom: 16,
+  },
+  profileHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  profileHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: {
+    fontWeight: "bold",
+    fontSize: 18,
+  },
+  leadName: {
+    fontWeight: "bold",
+    fontSize: 18,
+  },
+  leadId: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+  detailsBox: {
+    borderWidth: 1,
+    padding: 16,
+    borderRadius: 14,
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  detailLabel: {
+    fontSize: 12,
+  },
+  detailValue: {
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  detailValueText: {
+    fontSize: 12,
+  },
+  notesSection: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 4,
+  },
+  notesHeaderLabel: {
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  notesText: {
+    fontSize: 12,
+    fontStyle: "italic",
+  },
+  profileActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+  },
+  editProfileBtn: {
+    flex: 1,
+    borderWidth: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  editProfileBtnText: {
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  deleteLeadBtn: {
+    flex: 1,
+    borderWidth: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  deleteLeadBtnText: {
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  aiCard: {
+    padding: 16,
+  },
+  aiHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  aiHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  aiTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  runAuditBtn: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  runAuditBtnText: {
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+  aiResultContainer: {
+    gap: 12,
+  },
+  aiScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 14,
+  },
+  gradeAvatar: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gradeText: {
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  aiSummaryContent: {
+    flex: 1,
+  },
+  scoreTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  summaryText: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  aiActionBox: {
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 14,
+  },
+  boxLabel: {
+    fontSize: 10,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  boxContentText: {
+    fontSize: 12,
+  },
+  boxDraftText: {
+    fontSize: 12,
+    fontStyle: "italic",
+    marginBottom: 12,
+  },
+  replyActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  dispatchBtn: {
+    flex: 1,
+    borderWidth: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+  },
+  dispatchBtnText: {
+    fontSize: 11,
+    fontWeight: "bold",
+  },
+  aiEmptyState: {
+    paddingVertical: 24,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 12,
+    fontStyle: "italic",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    padding: 24,
+    borderRadius: 20,
+    width: "100%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  input: {
+    marginBottom: 12,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 0,
+  },
+  statusSelectContainer: {
+    marginBottom: 12,
+  },
+  statusSelectLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    paddingLeft: 4,
+  },
+  statusPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  statusPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  statusPillText: {
+    fontSize: 11,
+  },
+  notesHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  notesCharCount: {
+    fontSize: 10,
+  },
+  multilineInput: {
+    textAlignVertical: "top",
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalCancelBtnText: {
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  modalSaveBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalSaveBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+});

@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "../../../../shared/auth";
 import { uploadToGoogleDrive } from "../../../../shared/drive";
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    let files;
+    let files: any[] = [];
     try {
       files = await db.select().from(driveFiles).where(eq(driveFiles.userId, decoded.userId));
     } catch (error) {

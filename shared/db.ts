@@ -13,6 +13,7 @@ export const users = sqliteTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   googleId: text("google_id"),
+  passwordHash: text("password_hash"),
   organizationId: text("organization_id").references(() => organizations.id),
   role: text("role").default("MEMBER").notNull(),
   createdAt: integer("created_at").notNull(),

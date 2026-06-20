@@ -1,5 +1,63 @@
 import * as SQLite from "expo-sqlite";
-import { Lead, SyncOperation } from "../../shared/types";
+import { Lead, Task, SyncOperation } from "../../shared/types";
+
+export interface DriveFile {
+  id: string;
+  userId: string | null;
+  leadId: string | null;
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  webViewLink: string | null;
+  createdAt: number;
+}
+
+interface RawSqlLead {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  value: number;
+  notes: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface RawSqlTask {
+  id: string;
+  user_id: string | null;
+  lead_id: string | null;
+  title: string;
+  description: string | null;
+  status: "PENDING" | "COMPLETED";
+  due_date: number | null;
+  created_at: number;
+}
+
+interface RawSqlDriveFile {
+  id: string;
+  user_id: string | null;
+  lead_id: string | null;
+  file_id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  web_view_link: string | null;
+  created_at: number;
+}
+
+interface RawSqlSyncQueue {
+  id: number;
+  table: "leads" | "tasks";
+  operation: "CREATE" | "UPDATE" | "DELETE";
+  record_id: string;
+  payload: string;
+  created_at: number;
+  attempts: number;
+}
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -83,14 +141,14 @@ export async function initDb() {
 
 export async function getLocalLeads(): Promise<Lead[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<any>("SELECT * FROM leads ORDER BY created_at DESC");
+  const rows = await db.getAllAsync<RawSqlLead>("SELECT * FROM leads ORDER BY created_at DESC");
   return rows.map(r => ({
     id: r.id,
     userId: r.user_id,
     name: r.name,
     email: r.email,
     phone: r.phone,
-    status: r.status,
+    status: r.status as Lead["status"],
     value: r.value,
     notes: r.notes,
     createdAt: r.created_at,
@@ -117,7 +175,7 @@ export async function createLocalLead(lead: Lead) {
     ]
   );
 
-  await enqueueSyncOperation("leads", "CREATE", lead.id, lead);
+  await enqueueSyncOperation("leads", "CREATE", lead.id, lead as unknown as Record<string, unknown>);
 }
 
 export async function updateLocalLead(lead: Lead) {
@@ -135,7 +193,7 @@ export async function updateLocalLead(lead: Lead) {
       lead.id
     ]
   );
-  await enqueueSyncOperation("leads", "UPDATE", lead.id, lead);
+  await enqueueSyncOperation("leads", "UPDATE", lead.id, lead as unknown as Record<string, unknown>);
 }
 
 export async function deleteLocalLead(id: string) {
@@ -145,23 +203,35 @@ export async function deleteLocalLead(id: string) {
 }
 
 // Tasks Helpers
-export async function getLocalTasks(): Promise<any[]> {
+export async function getLocalTasks(): Promise<Task[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<any>("SELECT * FROM tasks ORDER BY created_at DESC");
+  const rows = await db.getAllAsync<RawSqlTask>("SELECT * FROM tasks ORDER BY created_at DESC");
   return rows.map(r => ({
     id: r.id,
     userId: r.user_id,
     leadId: r.lead_id,
     title: r.title,
     description: r.description,
-    status: r.status,
+    status: r.status as Task["status"],
     dueDate: r.due_date,
     createdAt: r.created_at
   }));
 }
 
-export async function createLocalTask(task: any) {
+export async function createLocalTask(task: Task) {
   const db = await getDb();
+  const bindDueDate = task.dueDate instanceof Date 
+    ? task.dueDate.getTime() 
+    : typeof task.dueDate === "string" 
+      ? new Date(task.dueDate).getTime() 
+      : task.dueDate || null;
+
+  const bindCreatedAt = task.createdAt instanceof Date 
+    ? task.createdAt.getTime() 
+    : typeof task.createdAt === "string" 
+      ? new Date(task.createdAt).getTime() 
+      : task.createdAt || Date.now();
+
   await db.runAsync(
     `INSERT INTO tasks (id, user_id, lead_id, title, description, status, due_date, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -172,18 +242,18 @@ export async function createLocalTask(task: any) {
       task.title,
       task.description,
       task.status || "PENDING",
-      task.dueDate || null,
-      task.createdAt || Date.now()
+      bindDueDate,
+      bindCreatedAt
     ]
   );
-  await enqueueSyncOperation("tasks", "CREATE", task.id, task);
+  await enqueueSyncOperation("tasks", "CREATE", task.id, task as unknown as Record<string, unknown>);
 }
 
 export async function updateLocalTaskStatus(id: string, status: "PENDING" | "COMPLETED") {
   const db = await getDb();
   await db.runAsync(`UPDATE tasks SET status = ? WHERE id = ?`, [status, id]);
   
-  const task = await db.getFirstAsync<any>(`SELECT * FROM tasks WHERE id = ?`, [id]);
+  const task = await db.getFirstAsync<RawSqlTask>(`SELECT * FROM tasks WHERE id = ?`, [id]);
   if (task) {
     await enqueueSyncOperation("tasks", "UPDATE", id, {
       id: task.id,
@@ -194,7 +264,7 @@ export async function updateLocalTaskStatus(id: string, status: "PENDING" | "COM
       status: status,
       dueDate: task.due_date,
       createdAt: task.created_at
-    });
+    } as unknown as Record<string, unknown>);
   }
 }
 
@@ -205,9 +275,9 @@ export async function deleteLocalTask(id: string) {
 }
 
 // Drive Files Helpers
-export async function getLocalDriveFiles(): Promise<any[]> {
+export async function getLocalDriveFiles(): Promise<DriveFile[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<any>("SELECT * FROM drive_files ORDER BY created_at DESC");
+  const rows = await db.getAllAsync<RawSqlDriveFile>("SELECT * FROM drive_files ORDER BY created_at DESC");
   return rows.map(r => ({
     id: r.id,
     userId: r.user_id,
@@ -221,7 +291,7 @@ export async function getLocalDriveFiles(): Promise<any[]> {
   }));
 }
 
-export async function createLocalDriveFile(file: any) {
+export async function createLocalDriveFile(file: DriveFile) {
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO drive_files (id, user_id, lead_id, file_id, name, mime_type, size, web_view_link, created_at)
@@ -245,7 +315,7 @@ export async function enqueueSyncOperation(
   table: "leads" | "tasks",
   operation: "CREATE" | "UPDATE" | "DELETE",
   recordId: string,
-  payload: Record<string, any>
+  payload: Record<string, unknown>
 ) {
   const db = await getDb();
   await db.runAsync(
@@ -258,7 +328,7 @@ export async function enqueueSyncOperation(
 
 export async function getQueuedOperations(): Promise<SyncOperation[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<any>('SELECT * FROM sync_queue ORDER BY id ASC');
+  const rows = await db.getAllAsync<RawSqlSyncQueue>('SELECT * FROM sync_queue ORDER BY id ASC');
   return rows.map(r => ({
     id: r.id,
     table: r.table,

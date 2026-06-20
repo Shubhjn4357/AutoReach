@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Alert, ActivityIndicator } from "react-native";
-import { View, Text, ScrollView, TextInput, Pressable } from "../../tw/index";
+import { Alert, ActivityIndicator, StyleSheet, View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "../../services/theme";
 import { 
   getLocalTasks, 
   createLocalTask, 
@@ -11,6 +12,7 @@ import {
 import { Task, Lead } from "../../shared/types";
 
 export default function TasksScreen() {
+  const { colors, glassStyle, glassInputStyle } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,121 +92,268 @@ export default function TasksScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-bg px-4 py-6">
-      
-      {/* Header */}
-      <View className="flex-row justify-between items-center mb-6">
-        <View>
-          <Text className="text-white text-2xl font-bold tracking-tight">Checklists</Text>
-          <Text className="text-text-secondary text-sm">Action items and lead tasks</Text>
-        </View>
+    <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.bg }]}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
         
-        <Pressable 
-          onPress={() => setShowForm(!showForm)}
-          className="bg-primary/20 border border-primary/40 px-3.5 py-1.5 rounded-full"
-        >
-          <Text className="text-primary text-xs font-semibold">
-            {showForm ? "Cancel" : "Add Task"}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Task Creation Form */}
-      {showForm && (
-        <View className="bg-surface border border-border p-4 rounded-xl mb-6">
-          <Text className="text-white text-base font-semibold mb-3">Create Action Task</Text>
-          <TextInput
-            placeholder="Task Title (e.g. Call Delta Partners)"
-            placeholderTextColor="#6B7280"
-            value={title}
-            onChangeText={setTitle}
-            className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-3"
-          />
-          <TextInput
-            placeholder="Description / Details (optional)"
-            placeholderTextColor="#6B7280"
-            value={description}
-            onChangeText={setDescription}
-            className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-3"
-          />
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <View>
+            <Text style={[styles.title, { color: colors.text }]}>Checklists</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Action items and lead tasks</Text>
+          </View>
           
-          <Text className="text-text-secondary text-xs mb-2">Associate with Lead (Optional):</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2 mb-4">
-            <Pressable
-              onPress={() => setSelectedLeadId("")}
-              className={`px-3 py-1.5 rounded-lg border ${
-                selectedLeadId === "" ? "bg-primary/20 border-primary" : "bg-bg border-border"
-              }`}
-            >
-              <Text className="text-white text-xs">No Association</Text>
-            </Pressable>
-            {leads.map(lead => (
-              <Pressable
-                key={lead.id}
-                onPress={() => setSelectedLeadId(lead.id)}
-                className={`px-3 py-1.5 rounded-lg border ${
-                  selectedLeadId === lead.id ? "bg-primary/20 border-primary" : "bg-bg border-border"
-                }`}
-              >
-                <Text className="text-white text-xs">{lead.name}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-
           <Pressable 
-            onPress={handleCreateTask}
-            className="bg-primary p-3 rounded-lg items-center"
+            onPress={() => setShowForm(!showForm)}
+            style={[styles.addBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D` }]}
           >
-            <Text className="text-white font-bold text-sm">Save Action Task</Text>
+            <Text style={[styles.addBtnText, { color: colors.primary }]}>
+              {showForm ? "Cancel" : "Add Task"}
+            </Text>
           </Pressable>
         </View>
-      )}
 
-      {/* Tasks List */}
-      <View className="gap-3 mb-10">
-        {loading ? (
-          <ActivityIndicator color="#5E6BFF" style={{ marginTop: 20 }} />
-        ) : tasks.length === 0 ? (
-          <Text className="text-text-secondary text-sm italic">No checklist tasks registered. Tap "Add Task" to create one.</Text>
-        ) : (
-          tasks.map(task => {
-            const associatedLead = leads.find(l => l.id === task.leadId);
-            return (
-              <View key={task.id} className="bg-card border border-border p-4 rounded-xl flex-row items-center gap-3">
-                
-                {/* Checkbox Trigger */}
-                <Pressable 
-                  onPress={() => toggleTask(task)}
-                  className={`w-5 h-5 border rounded flex-center items-center justify-center ${
-                    task.status === "COMPLETED" ? "bg-success border-success" : "border-border bg-bg"
-                  }`}
+        {/* Task Creation Form */}
+        {showForm && (
+          <View style={[glassStyle, styles.formContainer]}>
+            <Text style={[styles.formTitle, { color: colors.text }]}>Create Action Task</Text>
+            <TextInput
+              placeholder="Task Title (e.g. Call Delta Partners)"
+              placeholderTextColor={colors.textMuted}
+              value={title}
+              onChangeText={setTitle}
+              style={[glassInputStyle, styles.input]}
+            />
+            <TextInput
+              placeholder="Description / Details (optional)"
+              placeholderTextColor={colors.textMuted}
+              value={description}
+              onChangeText={setDescription}
+              style={[glassInputStyle, styles.input]}
+            />
+            
+            <Text style={[styles.assocLabel, { color: colors.textSecondary }]}>Associate with Lead (Optional):</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.assocRow}>
+              <Pressable
+                onPress={() => setSelectedLeadId("")}
+                style={[
+                  styles.assocBtn,
+                  selectedLeadId === ""
+                    ? { backgroundColor: `${colors.primary}33`, borderColor: colors.primary, borderWidth: 1 }
+                    : { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }
+                ]}
+              >
+                <Text style={[styles.assocBtnText, { color: colors.text }]}>No Association</Text>
+              </Pressable>
+              {leads.map(lead => (
+                <Pressable
+                  key={lead.id}
+                  onPress={() => setSelectedLeadId(lead.id)}
+                  style={[
+                    styles.assocBtn,
+                    selectedLeadId === lead.id
+                      ? { backgroundColor: `${colors.primary}33`, borderColor: colors.primary, borderWidth: 1 }
+                      : { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }
+                  ]}
                 >
-                  {task.status === "COMPLETED" && (
-                    <Text className="text-white text-2xs font-black">✓</Text>
-                  )}
+                  <Text style={[styles.assocBtnText, { color: colors.text }]}>{lead.name}</Text>
                 </Pressable>
+              ))}
+            </ScrollView>
 
-                <View className="flex-1">
-                  <Text className={`text-sm font-semibold ${
-                    task.status === "COMPLETED" ? "text-text-muted line-through" : "text-white"
-                  }`}>{task.title}</Text>
-                  {task.description && (
-                    <Text className="text-text-secondary text-2xs mt-0.5">{task.description}</Text>
-                  )}
-                  {associatedLead && (
-                    <Text className="text-primary text-3xs font-bold mt-1">🏷 Lead: {associatedLead.name}</Text>
-                  )}
-                </View>
-
-                {/* Delete Trigger */}
-                <Pressable onPress={() => handleDeleteTask(task.id)} className="p-1">
-                  <Text className="text-danger text-2xs font-bold underline">Delete</Text>
-                </Pressable>
-              </View>
-            );
-          })
+            <Pressable 
+              onPress={handleCreateTask}
+              style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.saveBtnText}>Save Action Task</Text>
+            </Pressable>
+          </View>
         )}
-      </View>
-    </ScrollView>
+
+        {/* Tasks List */}
+        <View style={styles.listContainer}>
+          {loading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+          ) : tasks.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No checklist tasks registered. Tap "Add Task" to create one.</Text>
+          ) : (
+            tasks.map(task => {
+              const associatedLead = leads.find(l => l.id === task.leadId);
+              const isCompleted = task.status === "COMPLETED";
+              return (
+                <View key={task.id} style={[glassStyle, styles.taskCard]}>
+                  
+                  {/* Checkbox Trigger */}
+                  <Pressable 
+                    onPress={() => toggleTask(task)}
+                    style={[
+                      styles.checkbox,
+                      isCompleted 
+                        ? { backgroundColor: colors.success, borderColor: colors.success }
+                        : { borderColor: colors.border, backgroundColor: colors.bg }
+                    ]}
+                  >
+                    {isCompleted && (
+                      <Text style={styles.checkmark}>✓</Text>
+                    )}
+                  </Pressable>
+
+                  <View style={styles.taskCardContent}>
+                    <Text 
+                      style={[
+                        styles.taskTitle,
+                        { color: colors.text },
+                        isCompleted && { color: colors.textMuted, textDecorationLine: "line-through" }
+                      ]}
+                    >
+                      {task.title}
+                    </Text>
+                    {task.description && (
+                      <Text style={[styles.taskDesc, { color: colors.textSecondary }]}>{task.description}</Text>
+                    )}
+                    {associatedLead && (
+                      <Text style={[styles.taskTag, { color: colors.primary }]}>🏷 Lead: {associatedLead.name}</Text>
+                    )}
+                  </View>
+
+                  {/* Delete Trigger */}
+                  <Pressable onPress={() => handleDeleteTask(task.id)} style={styles.deleteBtn}>
+                    <Text style={[styles.deleteBtnText, { color: colors.danger }]}>Delete</Text>
+                  </Pressable>
+                </View>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContainer: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  addBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  addBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  formContainer: {
+    padding: 16,
+    marginBottom: 20,
+  },
+  formTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 12,
+  },
+  input: {
+    marginBottom: 12,
+  },
+  assocLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  assocRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+    paddingVertical: 2,
+  },
+  assocBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  assocBtnText: {
+    fontSize: 12,
+  },
+  saveBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  saveBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  listContainer: {
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 32,
+  },
+  taskCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderRadius: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkmark: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "bold",
+  },
+  taskCardContent: {
+    flex: 1,
+  },
+  taskTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  taskDesc: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  taskTag: {
+    fontSize: 10,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  deleteBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  deleteBtnText: {
+    fontSize: 11,
+    fontWeight: "bold",
+    textDecorationLine: "underline",
+  },
+});

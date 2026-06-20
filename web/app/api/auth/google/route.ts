@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { verifyGoogleToken, signToken } from "../../../../../shared/auth";
 import { db } from "../../../../../shared/dbClient";

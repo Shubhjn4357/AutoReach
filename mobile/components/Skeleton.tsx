@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, DimensionValue, StyleProp, ViewStyle } from "react-native";
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -7,8 +7,10 @@ import Animated, {
   withTiming, 
   withSequence 
 } from "react-native-reanimated";
+import { useTheme } from "../services/theme";
 
-export function SkeletonPulse({ width = "100%", height = 20, style }: { width?: any; height?: number; style?: any }) {
+export function SkeletonPulse({ width = "100%", height = 20, style }: { width?: DimensionValue; height?: number; style?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0.3);
 
   useEffect(() => {
@@ -27,19 +29,20 @@ export function SkeletonPulse({ width = "100%", height = 20, style }: { width?: 
   });
 
   return (
-    <Animated.View style={[styles.skeleton, { width, height }, animatedStyle, style]} />
+    <Animated.View style={[styles.skeleton, { backgroundColor: colors.border, width, height }, animatedStyle, style]} />
   );
 }
 
 export function LeadCardSkeleton() {
+  const { colors } = useTheme();
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.row}>
         <SkeletonPulse width="60%" height={18} style={styles.mb8} />
         <SkeletonPulse width="25%" height={18} style={styles.mb8} />
       </View>
       <SkeletonPulse width="30%" height={24} style={[styles.mb12, { borderRadius: 6 }]} />
-      <View style={styles.box}>
+      <View style={[styles.box, { backgroundColor: colors.bg, borderColor: colors.border }]}>
         <SkeletonPulse width="50%" height={12} style={styles.mb8} />
         <SkeletonPulse width="90%" height={12} />
       </View>
@@ -49,12 +52,9 @@ export function LeadCardSkeleton() {
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: "#2A2A2A",
     borderRadius: 8,
   },
   card: {
-    backgroundColor: "#171717",
-    borderColor: "#2A2A2A",
     borderWidth: 1,
     padding: 16,
     borderRadius: 14,
@@ -66,8 +66,6 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   box: {
-    backgroundColor: "#050505",
-    borderColor: "#2A2A2A",
     borderWidth: 1,
     padding: 12,
     borderRadius: 10
@@ -79,3 +77,4 @@ const styles = StyleSheet.create({
     marginBottom: 12
   }
 });
+
