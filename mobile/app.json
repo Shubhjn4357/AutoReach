@@ -25,7 +25,9 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-asset",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

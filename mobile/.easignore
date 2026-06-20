@@ -1,0 +1,13 @@
+# Ignore dependencies
+node_modules/
+
+# Ignore local native builds
+android/
+ios/
+
+# Ignore build/export outputs and caches
+.expo/
+.metro/
+dist/
+*.apk
+*.ipa
