@@ -4,6 +4,21 @@ import { Stack } from "expo-router";
 import { initDb } from "../services/db";
 import { bootstrapStore } from "../services/store";
 import * as SecureStore from "expo-secure-store";
+import { ThemeProvider, useTheme } from "../tw/index";
+
+function InnerRootLayout() {
+  const { colors } = useTheme();
+  return (
+    <Stack screenOptions={{
+      headerStyle: { backgroundColor: colors.surface },
+      headerTintColor: colors.text,
+      headerTitleStyle: { fontWeight: "bold" },
+      contentStyle: { backgroundColor: colors.bg }
+    }}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
@@ -34,14 +49,9 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{
-      headerStyle: { backgroundColor: "#111111" },
-      headerTintColor: "#FFFFFF",
-      headerTitleStyle: { fontWeight: "bold" },
-      contentStyle: { backgroundColor: "#050505" }
-    }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
+    <ThemeProvider>
+      <InnerRootLayout />
+    </ThemeProvider>
   );
 }
 

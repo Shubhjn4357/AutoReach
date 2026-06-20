@@ -22,9 +22,21 @@
         "simulator": true
       }
     },
-    "production": {}
+    "production": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "keystorePath": "./key.keystore",
+        "keystorePassword": "${GOOGLE_PLAY_KEYSTORE_PASSWORD}",
+        "keyAlias": "${GOOGLE_PLAY_KEY_ALIAS}",
+        "keyPassword": "${GOOGLE_PLAY_KEY_PASSWORD}"
+      }
+    }
   }
 }

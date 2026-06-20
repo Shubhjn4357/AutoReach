@@ -9,7 +9,7 @@
     "mobile:start": "expo start mobile",
     "mobile:ios": "expo start mobile --ios",
     "mobile:android": "expo start mobile --android",
-    "mobile:android:prod": "eas build --platform android --profile production",
+    "mobile:android:prod": "cd mobile && eas build --platform android --profile production",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "lint": "eslint . --ext .ts,.tsx",

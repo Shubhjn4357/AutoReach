@@ -1,28 +1,52 @@
 import React from "react";
 import { Tabs } from "expo-router";
+import { useTheme } from "../../tw/index";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
+
   return (
     <Tabs screenOptions={{
       tabBarStyle: {
-        backgroundColor: "#111111",
-        borderTopColor: "#2A2A2A",
-        height: 60,
-        paddingBottom: 8,
-        paddingTop: 8,
+        backgroundColor: colors.surface,
+        borderTopColor: colors.border,
+        height: 65,
+        paddingBottom: 10,
+        paddingTop: 10,
       },
-      tabBarActiveTintColor: "#5E6BFF",
-      tabBarInactiveTintColor: "#6B7280",
-      headerStyle: {
-        backgroundColor: "#111111",
-        borderBottomColor: "#2A2A2A",
-      },
-      headerTintColor: "#FFFFFF",
+      tabBarActiveTintColor: colors.primary,
+      tabBarInactiveTintColor: colors.textMuted,
+      headerShown: false,
     }}>
-      <Tabs.Screen name="index" options={{ title: "Leads", headerTitle: "Leads Overview" }} />
-      <Tabs.Screen name="crm" options={{ title: "CRM", headerTitle: "Deal Funnel" }} />
-      <Tabs.Screen name="tasks" options={{ title: "Tasks", headerTitle: "Checklists" }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings", headerTitle: "Settings" }} />
+      <Tabs.Screen 
+        name="index" 
+        options={{ 
+          title: "Contacts",
+          tabBarIcon: ({ color, size }) => React.createElement(Ionicons, { name: "people-outline", size, color })
+        }} 
+      />
+      <Tabs.Screen 
+        name="crm" 
+        options={{ 
+          title: "CRM",
+          tabBarIcon: ({ color, size }) => React.createElement(Ionicons, { name: "funnel-outline", size, color })
+        }} 
+      />
+      <Tabs.Screen 
+        name="tasks" 
+        options={{ 
+          title: "Tasks",
+          tabBarIcon: ({ color, size }) => React.createElement(Ionicons, { name: "checkmark-done-outline", size, color })
+        }} 
+      />
+      <Tabs.Screen 
+        name="settings" 
+        options={{ 
+          title: "Settings",
+          tabBarIcon: ({ color, size }) => React.createElement(Ionicons, { name: "settings-outline", size, color })
+        }} 
+      />
     </Tabs>
   );
 }

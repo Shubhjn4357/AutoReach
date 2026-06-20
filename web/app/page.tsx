@@ -2,62 +2,60 @@
 
 import React, { useState, useEffect } from "react";
 import * as Lucide from "lucide-react";
-const Users = Lucide.Users as any;
-const TrendingUp = Lucide.TrendingUp as any;
-const DollarSign = Lucide.DollarSign as any;
-const CheckCircle = Lucide.CheckCircle as any;
-const Sparkles = Lucide.Sparkles as any;
-const RefreshCw = Lucide.RefreshCw as any;
-const Phone = Lucide.Phone as any;
-const Mail = Lucide.Mail as any;
-const Briefcase = Lucide.Briefcase as any;
-const Layers = Lucide.Layers as any;
-const Plus = Lucide.Plus as any;
-const CheckSquare = Lucide.CheckSquare as any;
-const HardDrive = Lucide.HardDrive as any;
-const CreditCard = Lucide.CreditCard as any;
-const Filter = Lucide.Filter as any;
-const MessageSquare = Lucide.MessageSquare as any;
-const Send = Lucide.Send as any;
 import { Lead, LeadStatus, Task } from "../../shared/types";
 import { calculatePipelineMetrics } from "../../shared/crm";
-import { CardSkeleton, DashboardSkeleton } from "../components/Skeleton";
+import { CardSkeleton } from "../components/Skeleton";
 
 export default function Dashboard() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState("pipeline");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [isLoading, setIsLoading] = useState(true);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [driveFiles, setDriveFiles] = useState<any[]>([]);
-  const [roleFilter, setRoleFilter] = useState("ALL");
-  const [syncLogs, setSyncLogs] = useState<any[]>([]);
   const [devEmail, setDevEmail] = useState("");
 
-  // Selected lead for AI audit
-  const [auditLeadId, setAuditLeadId] = useState("");
+  // Search & Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "ALL">("ALL");
+
+  // Selected Lead Details
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any | null>(null);
-
-  // Quick reply dispatch
-  const [dispatchPhone, setDispatchPhone] = useState("");
-  const [dispatchText, setDispatchText] = useState("");
-  const [dispatchChannel, setDispatchChannel] = useState<"whatsapp" | "sms">("whatsapp");
   const [dispatchLoading, setDispatchLoading] = useState(false);
 
-  // Form
+  // Modals visibility
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Profile Name Form
+  const [tempProfileName, setTempProfileName] = useState("");
+
+  // Contact Forms
   const [newLeadForm, setNewLeadForm] = useState({
     name: "",
     email: "",
     phone: "",
     value: "",
-    status: "NEW" as LeadStatus
+    status: "NEW" as LeadStatus,
+    notes: ""
   });
+
+  const [editLeadForm, setEditLeadForm] = useState({
+    id: "",
+    name: "",
+    email: "",
+    phone: "",
+    value: "",
+    status: "NEW" as LeadStatus,
+    notes: ""
+  });
+
+  const selectedLead = leads.find(l => l.id === selectedLeadId) || null;
 
   const loadBackendData = async (authToken: string) => {
     try {
-      // 1. Fetch leads
       const leadsResponse = await fetch("/api/leads", {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -67,20 +65,8 @@ export default function Dashboard() {
       } else {
         throw new Error(leadsResult.error?.message || "Leads GET failed");
       }
-
-      // 2. Fetch tasks
-      const tasksResponse = await fetch("/api/tasks", {
-        headers: { "Authorization": `Bearer ${authToken}` }
-      });
-      const tasksResult = await tasksResponse.json();
-      if (tasksResult.success) {
-        setTasks(tasksResult.data || []);
-      } else {
-        throw new Error(tasksResult.error?.message || "Tasks GET failed");
-      }
     } catch (error) {
-      console.warn("Backend API offline or failed, loading default mock data:", error);
-      // Fallback mock dataset
+      console.warn("Backend API offline, loading default mock data:", error);
       setLeads([
         {
           id: "lead_1",
@@ -131,68 +117,7 @@ export default function Dashboard() {
           updatedAt: Date.now() - 86400000 * 5
         }
       ]);
-
-      setTasks([
-        {
-          id: "task_1",
-          userId: "u_1",
-          leadId: "lead_1",
-          title: "Send custom chatbot presentation",
-          description: "Follow up with procurement details",
-          status: "PENDING",
-          dueDate: Date.now() + 86400000,
-          createdAt: Date.now()
-        },
-        {
-          id: "task_2",
-          userId: "u_1",
-          leadId: "lead_3",
-          title: "Schedule intro call",
-          description: "Call vortex logistics procurement",
-          status: "COMPLETED",
-          dueDate: Date.now() - 3600000,
-          createdAt: Date.now() - 86400000
-        }
-      ]);
     }
-
-    try {
-      // 3. Fetch Google Drive files
-      const driveResponse = await fetch("/api/drive", {
-        headers: { "Authorization": `Bearer ${authToken}` }
-      });
-      if (!driveResponse.ok) throw new Error("Drive GET failed");
-      const driveResult = await driveResponse.json();
-      if (driveResult.success) {
-        setDriveFiles(driveResult.data || []);
-      }
-    } catch (e) {
-      setDriveFiles([
-        {
-          id: "df_1",
-          name: "Initech_Proposal.pdf",
-          mimeType: "application/pdf",
-          size: 1420500,
-          webViewLink: "https://drive.google.com/open?id=mock_file_1",
-          createdAt: Date.now() - 86400000 * 2
-        },
-        {
-          id: "df_2",
-          name: "Acme_Specs_Chatbot.docx",
-          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          size: 345000,
-          webViewLink: "https://drive.google.com/open?id=mock_file_2",
-          createdAt: Date.now() - 86400000
-        }
-      ]);
-    }
-
-    // Load mock sync history
-    setSyncLogs([
-      { id: "sl_1", operation: "CREATE", table: "leads", recordId: "lead_3", timestamp: new Date(Date.now() - 1000 * 180).toISOString() },
-      { id: "sl_2", operation: "UPDATE", table: "leads", recordId: "lead_1", timestamp: new Date(Date.now() - 1000 * 600).toISOString() },
-      { id: "sl_3", operation: "UPDATE", table: "tasks", recordId: "task_2", timestamp: new Date(Date.now() - 1000 * 1200).toISOString() }
-    ]);
   };
 
   const loginWithToken = async (idToken: string) => {
@@ -210,6 +135,7 @@ export default function Dashboard() {
         localStorage.setItem("autoreach_user", JSON.stringify(profile));
         setToken(jwt);
         setUser(profile);
+        setTempProfileName(profile.name || "User");
         await loadBackendData(jwt);
       } else {
         alert(result.error?.message || "Authentication failed");
@@ -222,13 +148,23 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    // 1. Check local storage for existing session
+    // 1. Check local session
     const savedToken = localStorage.getItem("autoreach_token");
     const savedUser = localStorage.getItem("autoreach_user");
+    const savedTheme = localStorage.getItem("autoreach_theme") as any;
+
+    if (savedTheme) {
+      setTheme(savedTheme);
+      if (savedTheme === "light") {
+        document.documentElement.classList.add("light-theme");
+      }
+    }
+
     if (savedToken && savedUser) {
       setToken(savedToken);
       const parsedUser = JSON.parse(savedUser);
       setUser(parsedUser);
+      setTempProfileName(parsedUser.name || "User");
       loadBackendData(savedToken).then(() => {
         setIsLoading(false);
       });
@@ -236,7 +172,7 @@ export default function Dashboard() {
       setIsLoading(false);
     }
 
-    // 2. Load Google Identity Services script
+    // 2. Google OAuth scripts
     const script = document.createElement("script");
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
@@ -244,7 +180,6 @@ export default function Dashboard() {
     document.body.appendChild(script);
 
     return () => {
-      // Clean up script
       if (typeof document !== "undefined") {
         const scripts = document.querySelectorAll('script[src="https://accounts.google.com/gsi/client"]');
         scripts.forEach(s => s.remove());
@@ -252,7 +187,6 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Initialize Google Sign-In button when script is ready and no token is present
   useEffect(() => {
     if (typeof window !== "undefined" && !token) {
       const initGsi = () => {
@@ -272,13 +206,31 @@ export default function Dashboard() {
             });
           }
         } else {
-          // Retry in 100ms if script is not fully loaded
           setTimeout(initGsi, 100);
         }
       };
       initGsi();
     }
   }, [token]);
+
+  const toggleThemeMode = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    localStorage.setItem("autoreach_theme", nextTheme);
+    if (nextTheme === "light") {
+      document.documentElement.classList.add("light-theme");
+    } else {
+      document.documentElement.classList.remove("light-theme");
+    }
+  };
+
+  const handleUpdateProfile = () => {
+    if (!tempProfileName.trim() || !user) return;
+    const updatedUser = { ...user, name: tempProfileName };
+    setUser(updatedUser);
+    localStorage.setItem("autoreach_user", JSON.stringify(updatedUser));
+    setProfileModalOpen(false);
+  };
 
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,12 +244,15 @@ export default function Dashboard() {
       phone: newLeadForm.phone || null,
       status: newLeadForm.status,
       value: Number(newLeadForm.value) || 0,
-      notes: "Manually registered via Admin Console.",
+      notes: newLeadForm.notes || "Registered via Dashboard Console.",
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
 
+    // Instant local state update
     setLeads([newLead, ...leads]);
+    setSelectedLeadId(newLead.id);
+    setAddModalOpen(false);
 
     try {
       await fetch("/api/leads", {
@@ -308,13 +263,8 @@ export default function Dashboard() {
         },
         body: JSON.stringify(newLead)
       });
-      // Add log
-      setSyncLogs([
-        { id: `sl_${Math.random()}`, operation: "CREATE", table: "leads", recordId: newLead.id, timestamp: new Date().toISOString() },
-        ...syncLogs
-      ]);
     } catch (err) {
-      console.warn("Backend insertion offline, saved locally to state");
+      console.warn("Backend unavailable, fallback to local state.");
     }
 
     setNewLeadForm({
@@ -322,16 +272,93 @@ export default function Dashboard() {
       email: "",
       phone: "",
       value: "",
-      status: "NEW"
+      status: "NEW",
+      notes: ""
     });
-    setActiveTab("pipeline");
   };
 
-  const executeAiAudit = async (leadId: string) => {
-    if (!leadId || !token) return;
-    const targetLead = leads.find(l => l.id === leadId);
-    if (!targetLead) return;
+  const handleEditLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editLeadForm.name || !token) return;
 
+    const updatedLeads = leads.map(l => {
+      if (l.id === editLeadForm.id) {
+        return {
+          ...l,
+          name: editLeadForm.name,
+          email: editLeadForm.email || null,
+          phone: editLeadForm.phone || null,
+          value: Number(editLeadForm.value) || 0,
+          status: editLeadForm.status,
+          notes: editLeadForm.notes,
+          updatedAt: Date.now()
+        };
+      }
+      return l;
+    });
+
+    setLeads(updatedLeads);
+    setEditModalOpen(false);
+    setAiResult(null); // Clear previous AI audit
+
+    // Trigger mock update on server
+    try {
+      await fetch(`/api/leads`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id: editLeadForm.id,
+          name: editLeadForm.name,
+          email: editLeadForm.email,
+          phone: editLeadForm.phone,
+          value: editLeadForm.value,
+          status: editLeadForm.status,
+          notes: editLeadForm.notes
+        })
+      });
+    } catch (err) {
+      console.warn("Server leads PUT offline.");
+    }
+  };
+
+  const handleDeleteLead = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this contact?")) return;
+    setLeads(leads.filter(l => l.id !== id));
+    setSelectedLeadId(null);
+    setAiResult(null);
+
+    try {
+      // Mock delete
+      await fetch(`/api/leads?id=${id}`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: "DELETE", id })
+      });
+    } catch (err) {
+      console.warn("Server delete request offline.");
+    }
+  };
+
+  const openEditModal = (lead: Lead) => {
+    setEditLeadForm({
+      id: lead.id,
+      name: lead.name,
+      email: lead.email || "",
+      phone: lead.phone || "",
+      value: lead.value.toString(),
+      status: lead.status,
+      notes: lead.notes || ""
+    });
+    setEditModalOpen(true);
+  };
+
+  const runAiAudit = async (targetLead: Lead) => {
     setAiLoading(true);
     setAiResult(null);
 
@@ -347,13 +374,12 @@ export default function Dashboard() {
       const result = await response.json();
       if (result.success) {
         setAiResult(result.data);
-        setDispatchPhone(targetLead.phone || "");
-        setDispatchText(result.data.proposedQuickReply || "");
+      } else {
+        throw new Error(result.error?.message || "Audit failed");
       }
-    } catch (err) {
-      // offline audit simulation
+    } catch (err: any) {
       setAiResult({
-        score: targetLead.value > 15000 ? 92 : 65,
+        score: targetLead.value > 15000 ? 94 : 68,
         grade: targetLead.value > 15000 ? "A" : "B",
         summary: `Self-auditing offline profile data. Valuation: $${targetLead.value.toLocaleString()}. Status: ${targetLead.status}.`,
         suggestedAction: targetLead.value > 10000 
@@ -361,120 +387,82 @@ export default function Dashboard() {
           : "Schedule quick demo call via WhatsApp gateway.",
         proposedQuickReply: `Hi ${targetLead.name.split(" ")[0] || "there"}, following up on our proposal. Let me know when is best to sync!`
       });
-      setDispatchPhone(targetLead.phone || "");
-      setDispatchText(`Hi ${targetLead.name.split(" ")[0] || "there"}, following up on our proposal. Let me know when is best to sync!`);
     } finally {
       setAiLoading(false);
     }
   };
 
-  const handleMessageDispatch = async () => {
-    if (!dispatchPhone || !dispatchText || !token) return;
+  const handleMessageDispatch = async (channel: "whatsapp" | "sms", text: string) => {
+    if (!selectedLead?.phone || !text || !token) return;
     setDispatchLoading(true);
     try {
-      const response = await fetch(`/api/${dispatchChannel}`, {
+      const response = await fetch(`/api/${channel}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ phone: dispatchPhone, text: dispatchText })
+        body: JSON.stringify({ phone: selectedLead.phone, text })
       });
       const result = await response.json();
       if (result.success) {
-        alert(`${dispatchChannel.toUpperCase()} message sent successfully!`);
+        alert(`${channel.toUpperCase()} message sent successfully!`);
       } else {
         throw new Error(result.error?.message || "Dispatch failed");
       }
     } catch (e) {
-      alert("Simulated: Server is offline, message dispatch enqueued on target device.");
+      alert("Offline simulation: Message dispatch enqueued on target device.");
     } finally {
       setDispatchLoading(false);
     }
   };
 
-  // Filter leads by user role level
+  // Filter lists
   const filteredLeads = leads.filter(lead => {
-    if (roleFilter === "ALL") return true;
-    return lead.userId === roleFilter;
+    const matchesSearch = lead.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (lead.email && lead.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                          (lead.phone && lead.phone.includes(searchQuery));
+    const matchesStatus = statusFilter === "ALL" ? true : lead.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
-  const metrics = calculatePipelineMetrics(filteredLeads);
-
-  // Compute counts for SVG Chart
-  const statusCounts = {
-    NEW: leads.filter(l => l.status === "NEW").length,
-    CONTACTED: leads.filter(l => l.status === "CONTACTED").length,
-    QUALIFIED: leads.filter(l => l.status === "QUALIFIED").length,
-    WON: leads.filter(l => l.status === "WON").length,
-    LOST: leads.filter(l => l.status === "LOST").length,
-  };
+  const metrics = calculatePipelineMetrics(leads);
 
   if (isLoading) {
     return (
-      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyItems: "center", justifyContent: "center", background: "#050505" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-          <RefreshCw size={36} style={{ animation: "spin 1.5s linear infinite", color: "var(--color-primary)" }} />
-          <span style={{ fontSize: "1.1rem", fontWeight: 500, color: "var(--color-text-secondary)" }}>Initializing workspace...</span>
+      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-[#A0A0A0]">
+        <div className="flex flex-col items-center gap-4">
+          <Lucide.Loader className="animate-spin text-[#5E6BFF]" size={36} />
+          <span className="text-sm font-medium">Loading Workspace Console...</span>
         </div>
       </div>
     );
   }
 
+  // Auth Guard Screen
   if (!token) {
     return (
-      <div style={{
-        display: "flex",
-        minHeight: "100vh",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "radial-gradient(circle at center, #111 0%, #050505 100%)",
-        padding: "20px"
-      }}>
-        <div className="glass-card" style={{
-          width: "100%",
-          maxWidth: "420px",
-          padding: "40px",
-          borderRadius: "var(--radius-lg)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "32px",
-          boxShadow: "0 20px 40px rgba(0,0,0,0.8)"
-        }}>
-          {/* Logo & Header */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", textAlign: "center" }}>
-            <div style={{
-              background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-              width: "48px",
-              height: "48px",
-              borderRadius: "var(--radius-md)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center"
-            }}>
-              <Sparkles size={24} style={{ color: "#FFF" }} />
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_center,_#111_0%,_#050505_100%)] p-5">
+        <div className="glass-card w-full max-w-[420px] p-10 rounded-2xl flex flex-col gap-8 shadow-2xl">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="bg-gradient-to-br from-[#5E6BFF] to-[#7C5CFF] w-12 h-12 rounded-xl flex items-center justify-center shadow-lg">
+              <Lucide.Sparkles className="text-white" size={24} />
             </div>
-            <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-1px", marginTop: "8px" }}>AutoReach</h1>
-            <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9rem" }}>
-              Enterprise CRM & Communication Gateway
-            </p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white mt-2">AutoReach</h1>
+            <p className="text-sm text-[#A0A0A0]">Enterprise CRM & Communications Admin Dashboard</p>
           </div>
 
-          {/* Google Sign-In Button */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "center" }}>
-            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--color-text-secondary)", width: "100%", textAlign: "center" }}>
-              Sign in with your corporate account
-            </span>
-            <div id="google-signin-btn" style={{ minHeight: "44px", width: "100%", display: "flex", justifyContent: "center" }} />
+          <div className="flex flex-col gap-3 items-center">
+            <span className="text-xs font-semibold text-[#A0A0A0]">Sign in using your Google Credentials</span>
+            <div id="google-signin-btn" className="min-h-[44px] w-full flex justify-center" />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ flex: 1, height: "1px", background: "var(--color-border)" }} />
-            <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "1px" }}>or bypass</span>
-            <div style={{ flex: 1, height: "1px", background: "var(--color-border)" }} />
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-[1px] bg-[#2A2A2A]" />
+            <span className="text-[10px] text-[#6B7280] font-bold uppercase tracking-widest">or bypass</span>
+            <div className="flex-1 h-[1px] bg-[#2A2A2A]" />
           </div>
 
-          {/* Developer Bypass Login */}
           <form 
             onSubmit={async (e) => {
               e.preventDefault();
@@ -483,44 +471,24 @@ export default function Dashboard() {
                 await loginWithToken(mockToken);
               }
             }}
-            style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+            className="flex flex-col gap-4"
           >
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)", fontWeight: 500 }}>Developer Fallback (Email or Nickname)</label>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-[#A0A0A0] font-semibold">Bypass Username / Email</label>
               <input 
                 type="text"
                 placeholder="e.g. shubham"
                 value={devEmail}
                 onChange={(e) => setDevEmail(e.target.value)}
-                style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-xs)",
-                  padding: "12px 14px",
-                  color: "#FFF",
-                  outline: "none",
-                  fontSize: "0.95rem"
-                }}
+                className="bg-black/30 border border-[#2A2A2A] text-white px-4 py-3 rounded-xl outline-none text-sm focus:border-[#5E6BFF] transition-all"
                 required
               />
             </div>
             <button 
               type="submit"
-              style={{
-                background: "transparent",
-                color: "#FFF",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-xs)",
-                padding: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "background var(--transition-normal)",
-                fontSize: "0.95rem"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+              className="bg-transparent border border-[#2A2A2A] hover:bg-[#2A2A2A]/20 hover:border-[#5E6BFF] text-white font-bold py-3 rounded-xl text-sm transition-all cursor-pointer"
             >
-              Developer Login Bypasser
+              Developer Login Bypass
             </button>
           </form>
         </div>
@@ -528,190 +496,51 @@ export default function Dashboard() {
     );
   }
 
+  // Redesigned Web Main App layout
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#050505" }}>
-      {/* 1. Left Sidebar */}
-      <aside style={{
-        width: "260px",
-        borderRight: "1px solid var(--color-border)",
-        background: "rgba(17, 17, 17, 0.8)",
-        backdropFilter: "blur(20px)",
-        display: "flex",
-        flexDirection: "column",
-        padding: "24px 16px"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "36px", paddingLeft: "8px" }}>
-          <div style={{
-            background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-            width: "36px",
-            height: "36px",
-            borderRadius: "var(--radius-sm)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}>
-            <Sparkles size={18} />
+    <div className="flex min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] font-sans antialiased transition-colors duration-300">
+      
+      {/* 1. Header TopBar */}
+      <div className="fixed top-0 left-0 right-0 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between px-6 z-30 shadow-md">
+        
+        {/* Profile trigger */}
+        <div 
+          onClick={() => { setTempProfileName(user?.name || "User"); setProfileModalOpen(true); }}
+          className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#5E6BFF] to-[#7C5CFF] flex items-center justify-center font-bold text-sm text-white shadow-md">
+            {(user?.name || "U").substring(0, 2).toUpperCase()}
           </div>
-          <span style={{ fontWeight: 700, fontSize: "1.15rem", letterSpacing: "-0.5px" }}>AutoReach</span>
+          <div>
+            <div className="text-xs text-[var(--color-text-secondary)] font-semibold leading-none">Console Manager</div>
+            <div className="text-sm font-bold text-[var(--color-text-primary)] mt-1">{user?.name || "User"}</div>
+          </div>
         </div>
 
-        <nav style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
-          <button 
-            onClick={() => setActiveTab("pipeline")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "pipeline" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "pipeline" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <Layers size={18} />
-            Pipeline Funnel
-          </button>
+        {/* Brand Name */}
+        <div className="flex items-center gap-2">
+          <Lucide.Sparkles size={20} className="text-[#5E6BFF]" />
+          <span className="text-lg font-black tracking-tight bg-gradient-to-r from-white to-[var(--color-text-secondary)] bg-clip-text text-transparent">AutoReach CRM</span>
+        </div>
 
-          <button 
-            onClick={() => setActiveTab("tasks")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "tasks" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "tasks" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <CheckSquare size={18} />
-            Tasks Checklist
-          </button>
-
-          <button 
-            onClick={() => setActiveTab("drive")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "drive" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "drive" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <HardDrive size={18} />
-            Google Drive Files
-          </button>
-
-          <button 
-            onClick={() => setActiveTab("ai-audit")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "ai-audit" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "ai-audit" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <Sparkles size={18} style={{ color: "var(--color-accent)" }} />
-            AI Auditor Agent
-          </button>
-
-          <button 
-            onClick={() => setActiveTab("new-lead")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "new-lead" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "new-lead" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <Plus size={18} />
-            Register Lead
-          </button>
-
-          <button 
-            onClick={() => setActiveTab("billing")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "12px 14px",
-              border: "none",
-              background: activeTab === "billing" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-              color: activeTab === "billing" ? "var(--color-primary)" : "var(--color-text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              cursor: "pointer",
-              fontWeight: 500,
-              textAlign: "left",
-              width: "100%",
-              transition: "all var(--transition-normal)"
-            }}
-          >
-            <CreditCard size={18} />
-            SaaS & Billing
-          </button>
-        </nav>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 8px", borderTop: "1px solid var(--color-border)", width: "100%" }}>
-          <div style={{
-            width: "32px",
-            height: "32px",
-            borderRadius: "var(--radius-pill)",
-            background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "0.85rem",
-            fontWeight: 600,
-            color: "#FFF"
-          }}>
-            {(user?.name || user?.email || "U").substring(0, 2).toUpperCase()}
+        {/* Global Controls */}
+        <div className="flex items-center gap-3">
+          {/* Metrics summary badges */}
+          <div className="hidden md:flex items-center gap-4 bg-[var(--color-bg)] border border-[var(--color-border)] px-4 py-1.5 rounded-full text-xs font-semibold">
+            <span className="text-[var(--color-text-secondary)]">Pipeline: <strong className="text-[#5E6BFF]">${metrics.totalValue.toLocaleString()}</strong></span>
+            <div className="w-[1px] h-3 bg-[var(--color-border)]" />
+            <span className="text-[var(--color-text-secondary)]">Win Rate: <strong className="text-[#22C55E]">{metrics.winRate}%</strong></span>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "0.85rem", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.name || user?.email?.split("@")[0] || "User"}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user?.role || "Workspace Admin"}
-            </div>
-          </div>
+
+          {/* Theme Toggler */}
+          <button 
+            onClick={toggleThemeMode}
+            className="w-9 h-9 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center hover:bg-[var(--color-border)] transition-colors cursor-pointer text-[var(--color-text-primary)]"
+          >
+            {theme === "dark" ? <Lucide.Sun size={16} /> : <Lucide.Moon size={16} />}
+          </button>
+
+          {/* Log Out */}
           <button
             onClick={() => {
               localStorage.removeItem("autoreach_token");
@@ -719,586 +548,287 @@ export default function Dashboard() {
               setToken(null);
               setUser(null);
             }}
+            className="w-9 h-9 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center hover:bg-[#EF4444]/10 hover:border-[#EF4444] transition-colors cursor-pointer text-[#EF4444]"
             title="Log Out"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--color-text-muted)",
-              cursor: "pointer",
-              padding: "6px",
-              display: "flex",
-              alignItems: "center",
-              transition: "color 0.2s ease"
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.color = "#FF4B4B"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "var(--color-text-muted)"}
           >
             <Lucide.LogOut size={16} />
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* 2. Main content */}
-      <main style={{ flex: 1, padding: "40px", overflowY: "auto" }}>
+      {/* Main Workspace Frame */}
+      <div className="flex flex-1 pt-16 h-screen overflow-hidden">
         
-        {/* Header */}
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "36px" }}>
-          <div>
-            <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-1px", marginBottom: "4px" }}>Admin Console</h1>
-            <p style={{ color: "var(--color-text-secondary)", fontSize: "0.95rem" }}>Monitor synchronizations, active customer funnels, and agent outputs.</p>
-          </div>
+        {/* Left Side: Scrollable Contacts List Panel */}
+        <div className="w-full md:w-[380px] lg:w-[420px] bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col h-full shrink-0">
           
-          <div className="glass-surface" style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "8px 16px",
-            borderRadius: "var(--radius-pill)",
-            fontSize: "0.85rem"
-          }}>
-            <RefreshCw size={14} className="text-success" style={{ animation: "spin 8s linear infinite" }} />
-            <span>Turso Database Connected</span>
-          </div>
-        </header>
+          {/* List Toolbar (Search + Status Filter) */}
+          <div className="p-4 border-b border-[var(--color-border)] flex flex-col gap-3">
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="Search name, phone, email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl pl-10 pr-4 py-2.5 text-xs text-[var(--color-text-primary)] outline-none focus:border-[#5E6BFF] transition-all"
+              />
+              <Lucide.Search className="absolute left-3 top-3 text-[var(--color-text-muted)]" size={14} />
+            </div>
 
-        {/* 3. Analytics grid */}
-        <section style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "20px",
-          marginBottom: "40px"
-        }}>
-          {isLoading ? (
-            <>
-              <CardSkeleton />
-              <CardSkeleton />
-              <CardSkeleton />
-              <CardSkeleton />
-            </>
-          ) : (
-            <>
-              <div className="glass-card" style={{ padding: "24px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
-                  <span>Total Pipeline</span>
-                  <TrendingUp size={20} style={{ color: "var(--color-primary)" }} />
-                </div>
-                <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>${metrics.totalValue.toLocaleString()}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "4px" }}>Active sales pipeline value</div>
-              </div>
-
-              <div className="glass-card" style={{ padding: "24px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
-                  <span>Weighted Projection</span>
-                  <DollarSign size={20} style={{ color: "var(--color-secondary)" }} />
-                </div>
-                <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>${Math.round(metrics.weightedValue).toLocaleString()}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "4px" }}>Adjusted by deal stage probability</div>
-              </div>
-
-              <div className="glass-card" style={{ padding: "24px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
-                  <span>Conversion Rate</span>
-                  <CheckCircle size={20} style={{ color: "var(--color-success)" }} />
-                </div>
-                <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{metrics.winRate}%</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "4px" }}>{metrics.wonCount} won vs {metrics.lostCount} lost</div>
-              </div>
-
-              <div className="glass-card" style={{ padding: "24px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
-                  <span>Active Leads</span>
-                  <Users size={20} style={{ color: "var(--color-accent)" }} />
-                </div>
-                <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{metrics.activeCount}</div>
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "4px" }}>Leads currently in process</div>
-              </div>
-            </>
-          )}
-        </section>
-
-        {isLoading ? (
-          <DashboardSkeleton />
-        ) : activeTab === "pipeline" ? (
-          <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "30px" }}>
-            
-            {/* Leads Table */}
-            <section className="glass-card" style={{ padding: "28px", borderRadius: "var(--radius-lg)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                <h2 style={{ fontSize: "1.25rem", fontWeight: 600 }}>Active Pipelines</h2>
-                
-                {/* Team Filter */}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <Filter size={16} style={{ color: "var(--color-text-secondary)" }} />
-                  <select 
-                    value={roleFilter} 
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    style={{
-                      background: "#171717",
-                      color: "#FFF",
-                      border: "1px solid var(--color-border)",
-                      padding: "6px 12px",
-                      borderRadius: "var(--radius-xs)",
-                      fontSize: "0.8rem",
-                      outline: "none"
-                    }}
-                  >
-                    <option value="ALL">All Owners</option>
-                    <option value={user?.id || "u_1"}>Me ({user?.name || "User"})</option>
-                  </select>
-                </div>
-              </div>
-
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--color-border)", textAlign: "left" }}>
-                    <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Name</th>
-                    <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Status</th>
-                    <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Value</th>
-                    <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeads.map((lead) => (
-                    <tr key={lead.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
-                      <td style={{ padding: "16px 0" }}>
-                        <div style={{ fontWeight: 600 }}>{lead.name}</div>
-                        <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "4px" }}>{lead.email}</div>
-                      </td>
-                      <td>
-                        <span style={{
-                          padding: "4px 10px",
-                          borderRadius: "var(--radius-pill)",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                          backgroundColor: 
-                            lead.status === "WON" ? "rgba(34, 197, 94, 0.15)" :
-                            lead.status === "LOST" ? "rgba(239, 68, 68, 0.15)" :
-                            lead.status === "QUALIFIED" ? "rgba(94, 107, 255, 0.15)" :
-                            "rgba(245, 158, 11, 0.15)",
-                          color:
-                            lead.status === "WON" ? "var(--color-success)" :
-                            lead.status === "LOST" ? "var(--color-danger)" :
-                            lead.status === "QUALIFIED" ? "var(--color-primary)" :
-                            "var(--color-warning)"
-                        }}>
-                          {lead.status}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>${lead.value.toLocaleString()}</td>
-                      <td>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          {lead.phone && <a href={`tel:${lead.phone}`} title="Call Gateway" style={{ color: "var(--color-text-secondary)" }}><Phone size={16} /></a>}
-                          {lead.email && <a href={`mailto:${lead.email}`} title="Email Client" style={{ color: "var(--color-text-secondary)" }}><Mail size={16} /></a>}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-
-            {/* Dashboard Visual Charts & Sync logs */}
-            <aside style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              
-              {/* SVG Charts */}
-              <div className="glass-card" style={{ padding: "28px", borderRadius: "var(--radius-lg)" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px" }}>Pipeline Stages Distribution</h3>
-                <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
-                  <svg width="240" height="140" viewBox="0 0 240 140">
-                    {/* Grid Lines */}
-                    <line x1="30" y1="10" x2="220" y2="10" stroke="rgba(255,255,255,0.05)" />
-                    <line x1="30" y1="50" x2="220" y2="50" stroke="rgba(255,255,255,0.05)" />
-                    <line x1="30" y1="90" x2="220" y2="90" stroke="rgba(255,255,255,0.05)" />
-                    <line x1="30" y1="120" x2="220" y2="120" stroke="rgba(255,255,255,0.2)" />
-                    
-                    {/* SVG Bars representing stage sizes */}
-                    {/* NEW */}
-                    <rect x="45" y={120 - Math.max(statusCounts.NEW * 25, 4)} width="16" height={Math.max(statusCounts.NEW * 25, 4)} fill="var(--color-warning)" rx="2" />
-                    <text x="53" y="132" fill="var(--color-text-muted)" fontSize="8" textAnchor="middle">NEW</text>
-                    
-                    {/* CONTACTED */}
-                    <rect x="80" y={120 - Math.max(statusCounts.CONTACTED * 25, 4)} width="16" height={Math.max(statusCounts.CONTACTED * 25, 4)} fill="var(--color-secondary)" rx="2" />
-                    <text x="88" y="132" fill="var(--color-text-muted)" fontSize="8" textAnchor="middle">CONT</text>
-                    
-                    {/* QUALIFIED */}
-                    <rect x="115" y={120 - Math.max(statusCounts.QUALIFIED * 25, 4)} width="16" height={Math.max(statusCounts.QUALIFIED * 25, 4)} fill="var(--color-primary)" rx="2" />
-                    <text x="123" y="132" fill="var(--color-text-muted)" fontSize="8" textAnchor="middle">QUAL</text>
-                    
-                    {/* WON */}
-                    <rect x="150" y={120 - Math.max(statusCounts.WON * 25, 4)} width="16" height={Math.max(statusCounts.WON * 25, 4)} fill="var(--color-success)" rx="2" />
-                    <text x="158" y="132" fill="var(--color-text-muted)" fontSize="8" textAnchor="middle">WON</text>
-                    
-                    {/* LOST */}
-                    <rect x="185" y={120 - Math.max(statusCounts.LOST * 25, 4)} width="16" height={Math.max(statusCounts.LOST * 25, 4)} fill="var(--color-danger)" rx="2" />
-                    <text x="193" y="132" fill="var(--color-text-muted)" fontSize="8" textAnchor="middle">LOST</text>
-                  </svg>
-                </div>
-              </div>
-
-              {/* Sync Queue Logs */}
-              <div className="glass-card" style={{ padding: "24px", borderRadius: "var(--radius-md)" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px" }}>Offline Sync Stream</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {syncLogs.map((log) => (
-                    <div key={log.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8rem", paddingBottom: "8px", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                      <div>
-                        <span style={{ color: "var(--color-primary)", fontWeight: 700 }}>{log.operation} </span>
-                        <span style={{ color: "var(--color-text-secondary)" }}>{log.table} ({log.recordId})</span>
-                      </div>
-                      <span style={{ color: "var(--color-text-muted)" }}>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </aside>
-          </div>
-        ) : activeTab === "tasks" ? (
-          /* Tasks Checklist Tab */
-          <section className="glass-card" style={{ padding: "32px", borderRadius: "var(--radius-lg)" }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 600, marginBottom: "20px" }}>Active Task Checklist</h2>
-            <p style={{ color: "var(--color-text-secondary)", marginBottom: "24px", fontSize: "0.95rem" }}>
-              Action checklist items synced automatically from member SQLite clients.
-            </p>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--color-border)", textAlign: "left" }}>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Task Title</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Description</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Status</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Associated Lead</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task) => {
-                  const matchingLead = leads.find(l => l.id === task.leadId);
-                  return (
-                    <tr key={task.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
-                      <td style={{ padding: "16px 0", fontWeight: 600 }}>{task.title}</td>
-                      <td style={{ color: "var(--color-text-secondary)" }}>{task.description || "No description"}</td>
-                      <td>
-                        <span style={{
-                          padding: "4px 10px",
-                          borderRadius: "var(--radius-pill)",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                          backgroundColor: task.status === "COMPLETED" ? "rgba(34, 197, 94, 0.15)" : "rgba(94, 107, 255, 0.15)",
-                          color: task.status === "COMPLETED" ? "var(--color-success)" : "var(--color-primary)"
-                        }}>
-                          {task.status}
-                        </span>
-                      </td>
-                      <td style={{ color: "var(--color-accent)", fontWeight: 500 }}>
-                        {matchingLead ? matchingLead.name : "Unassociated"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </section>
-        ) : activeTab === "drive" ? (
-          /* Google Drive Files Tab */
-          <section className="glass-card" style={{ padding: "32px", borderRadius: "var(--radius-lg)" }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 600, marginBottom: "20px" }}>Google Drive Document Repository</h2>
-            <p style={{ color: "var(--color-text-secondary)", marginBottom: "24px", fontSize: "0.95rem" }}>
-              Cloud drive document mappings. Storing fileIDs and metadata only, keeping remote DB clean of binary blobs.
-            </p>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--color-border)", textAlign: "left" }}>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>File Name</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Mime Type</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>File Size</th>
-                  <th style={{ paddingBottom: "12px", color: "var(--color-text-secondary)" }}>Drive Link</th>
-                </tr>
-              </thead>
-              <tbody>
-                {driveFiles.map((file) => (
-                  <tr key={file.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
-                    <td style={{ padding: "16px 0", fontWeight: 600 }}>{file.name}</td>
-                    <td style={{ color: "var(--color-text-secondary)" }}>{file.mimeType}</td>
-                    <td>{Math.round(file.size / 1024).toLocaleString()} KB</td>
-                    <td>
-                      <a href={file.webViewLink} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-primary)", textDecoration: "underline", fontWeight: 600 }}>
-                        Open in Google Drive ➔
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ) : activeTab === "ai-audit" ? (
-          /* AI Auditor Agent Tab */
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}>
-            
-            {/* Audit selection panel */}
-            <section className="glass-card" style={{ padding: "28px", borderRadius: "var(--radius-lg)" }}>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "16px" }}>Select Lead for Proactive Audit</h2>
-              <div style={{ display: "flex", gap: "10px", marginBottom: "24px" }}>
-                <select 
-                  value={auditLeadId}
-                  onChange={(e) => setAuditLeadId(e.target.value)}
-                  style={{
-                    flex: 1,
-                    background: "#171717",
-                    color: "#FFF",
-                    border: "1px solid var(--color-border)",
-                    padding: "12px",
-                    borderRadius: "var(--radius-xs)",
-                    outline: "none"
-                  }}
+            {/* Stage filter buttons */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {(["ALL", "NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"] as const).map(stage => (
+                <button
+                  key={stage}
+                  onClick={() => setStatusFilter(stage)}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer whitespace-nowrap ${
+                    statusFilter === stage 
+                      ? "bg-[#5E6BFF]/15 border-[#5E6BFF] text-[#5E6BFF]" 
+                      : "bg-[var(--color-bg)] border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[#5E6BFF]/50"
+                  }`}
                 >
-                  <option value="">Select a Lead...</option>
-                  {leads.map(lead => (
-                    <option key={lead.id} value={lead.id}>{lead.name} (${lead.value.toLocaleString()})</option>
-                  ))}
-                </select>
-                <button 
-                  onClick={() => executeAiAudit(auditLeadId)}
-                  disabled={aiLoading || !auditLeadId}
-                  style={{
-                    background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-                    color: "#FFF",
-                    border: "none",
-                    padding: "12px 24px",
-                    borderRadius: "var(--radius-xs)",
-                    fontWeight: 600,
-                    cursor: "pointer"
-                  }}
-                >
-                  {aiLoading ? "Analyzing..." : "Audit Lead Profile"}
+                  {stage}
                 </button>
-              </div>
+              ))}
+            </div>
+          </div>
 
-              {aiResult && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-                    <div style={{
-                      width: "60px",
-                      height: "60px",
-                      background: "rgba(94, 107, 255, 0.15)",
-                      border: "2px solid var(--color-primary)",
-                      borderRadius: "var(--radius-sm)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "2rem",
-                      fontWeight: 900,
-                      color: "var(--color-primary)"
-                    }}>
-                      {aiResult.grade}
+          {/* Scrollable list content */}
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 pb-24">
+            {filteredLeads.length === 0 ? (
+              <div className="py-12 text-center flex flex-col items-center justify-center text-[var(--color-text-muted)]">
+                <Lucide.Users size={32} className="mb-2 opacity-50" />
+                <span className="text-xs italic">No contacts found</span>
+              </div>
+            ) : (
+              filteredLeads.map(lead => (
+                <div
+                  key={lead.id}
+                  onClick={() => { setSelectedLeadId(lead.id); setAiResult(null); }}
+                  className={`glass-card p-4 rounded-2xl cursor-pointer transition-all duration-300 border ${
+                    selectedLeadId === lead.id 
+                      ? "border-[#5E6BFF] bg-[#5E6BFF]/5 translate-x-1" 
+                      : "border-[var(--color-border)] hover:border-[#5E6BFF]/40"
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-sm font-bold text-[var(--color-text-primary)] leading-tight">{lead.name}</span>
+                    <span className="text-[#5E6BFF] font-bold text-xs">${lead.value.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="bg-[#5E6BFF]/10 text-[#5E6BFF] px-2 py-0.5 rounded font-bold">{lead.status}</span>
+                    <span className="text-[var(--color-text-muted)]">{lead.phone || "No phone"}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Contact Profile Details & AI Audit Pane */}
+        <div className="flex-1 bg-[var(--color-bg)] flex flex-col h-full overflow-y-auto">
+          {selectedLead ? (
+            <div className="p-6 max-w-4xl w-full mx-auto flex flex-col gap-6 pb-24">
+              
+              {/* Profile Main Card */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-3xl shadow-sm">
+                
+                {/* Header details */}
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 border-b border-[var(--color-border)] pb-5">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-full bg-[#5E6BFF]/10 border border-[#5E6BFF]/20 flex items-center justify-center font-black text-xl text-[#5E6BFF]">
+                      {selectedLead.name.substring(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 700 }}>Profile Score: {aiResult.score}/100</div>
-                      <div style={{ color: "var(--color-text-secondary)", fontSize: "0.85rem", marginTop: "4px" }}>{aiResult.summary}</div>
+                      <h2 className="text-xl font-bold text-[var(--color-text-primary)]">{selectedLead.name}</h2>
+                      <p className="text-xs text-[var(--color-text-muted)] mt-1">Status: <strong className="text-[#5E6BFF]">{selectedLead.status}</strong></p>
                     </div>
                   </div>
 
-                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-border)", padding: "16px", borderRadius: "var(--radius-xs)" }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--color-primary)", marginBottom: "6px" }}>Suggested Sales Action:</div>
-                    <div style={{ color: "var(--color-text-secondary)", fontSize: "0.85rem", lineHeight: "1.4" }}>{aiResult.suggestedAction}</div>
-                  </div>
-                </div>
-              )}
-            </section>
-
-            {/* Quick reply dispatcher panel */}
-            <section className="glass-card" style={{ padding: "28px", borderRadius: "var(--radius-lg)" }}>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "20px" }}>AI Communications Dispatcher</h2>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>Recipient Phone Number</label>
-                  <input 
-                    type="text" 
-                    value={dispatchPhone}
-                    onChange={(e) => setDispatchPhone(e.target.value)}
-                    placeholder="+1 (555) 000-0000"
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid var(--color-border)",
-                      padding: "10px",
-                      borderRadius: "var(--radius-xs)",
-                      color: "#FFF",
-                      outline: "none"
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>Channel Type</label>
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <button 
-                      onClick={() => setDispatchChannel("whatsapp")}
-                      style={{
-                        flex: 1,
-                        background: dispatchChannel === "whatsapp" ? "rgba(34, 197, 94, 0.15)" : "transparent",
-                        color: dispatchChannel === "whatsapp" ? "var(--color-success)" : "var(--color-text-secondary)",
-                        border: `1px solid ${dispatchChannel === "whatsapp" ? "var(--color-success)" : "var(--color-border)"}`,
-                        padding: "10px",
-                        borderRadius: "var(--radius-xs)",
-                        cursor: "pointer",
-                        fontWeight: 600
-                      }}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => openEditModal(selectedLead)}
+                      className="bg-[#5E6BFF]/10 border border-[#5E6BFF]/20 text-[#5E6BFF] hover:bg-[#5E6BFF]/20 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                     >
-                      WhatsApp Bridge
+                      <Lucide.Edit3 size={13} />
+                      Edit Details
                     </button>
-                    <button 
-                      onClick={() => setDispatchChannel("sms")}
-                      style={{
-                        flex: 1,
-                        background: dispatchChannel === "sms" ? "rgba(94, 107, 255, 0.15)" : "transparent",
-                        color: dispatchChannel === "sms" ? "var(--color-primary)" : "var(--color-text-secondary)",
-                        border: `1px solid ${dispatchChannel === "sms" ? "var(--color-primary)" : "var(--color-border)"}`,
-                        padding: "10px",
-                        borderRadius: "var(--radius-xs)",
-                        cursor: "pointer",
-                        fontWeight: 600
-                      }}
+                    <button
+                      onClick={() => handleDeleteLead(selectedLead.id)}
+                      className="bg-[#EF4444]/10 border border-[#EF4444]/20 text-[#EF4444] hover:bg-[#EF4444]/20 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                     >
-                      SMS Gateway
+                      <Lucide.Trash2 size={13} />
+                      Delete
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>Draft Response</label>
-                  <textarea 
-                    value={dispatchText}
-                    onChange={(e) => setDispatchText(e.target.value)}
-                    rows={4}
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid var(--color-border)",
-                      padding: "10px",
-                      borderRadius: "var(--radius-xs)",
-                      color: "#FFF",
-                      outline: "none",
-                      resize: "none"
-                    }}
-                  />
+                {/* Information Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-2xl flex flex-col">
+                    <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold mb-1">Deal Valuation</span>
+                    <span className="text-lg font-bold text-[#5E6BFF]">${selectedLead.value.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-2xl flex flex-col">
+                    <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold mb-1">Phone Number</span>
+                    <span className="text-sm font-semibold text-[var(--color-text-primary)]">{selectedLead.phone || "Not provided"}</span>
+                  </div>
+                  <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-2xl flex flex-col">
+                    <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold mb-1">Email Address</span>
+                    <span className="text-sm text-[var(--color-text-primary)]">{selectedLead.email || "Not provided"}</span>
+                  </div>
+                  <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-2xl flex flex-col">
+                    <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold mb-1">Contact ID</span>
+                    <span className="text-xs font-mono text-[var(--color-text-secondary)]">{selectedLead.id}</span>
+                  </div>
                 </div>
 
-                <button 
-                  onClick={handleMessageDispatch}
-                  disabled={dispatchLoading || !dispatchPhone || !dispatchText}
-                  style={{
-                    background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-                    color: "#FFF",
-                    border: "none",
-                    padding: "14px",
-                    borderRadius: "var(--radius-xs)",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "10px"
-                  }}
-                >
-                  <Send size={16} />
-                  {dispatchLoading ? "Dispatching..." : `Send via ${dispatchChannel === "whatsapp" ? "WhatsApp" : "SMS"}`}
-                </button>
+                <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-2xl mt-4">
+                  <span className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold block mb-1">Internal Notes</span>
+                  <p className="text-xs text-[var(--color-text-secondary)] italic leading-relaxed">{selectedLead.notes || "No notes written."}</p>
+                </div>
               </div>
-            </section>
-          </div>
-        ) : activeTab === "new-lead" ? (
-          /* Create Form */
-          <section className="glass-card" style={{ padding: "32px", borderRadius: "var(--radius-lg)", maxWidth: "600px" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "24px" }}>Register New Sales Lead</h2>
-            
-            <form onSubmit={handleAddLead} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>Company Name / Lead Title</label>
+
+              {/* AI CRM Auditor Section */}
+              <div className="bg-[#5E6BFF]/5 border border-[#5E6BFF]/20 p-6 rounded-3xl shadow-sm">
+                <div className="flex justify-between items-center mb-5">
+                  <div className="flex items-center gap-2">
+                    <Lucide.Sparkles size={20} className="text-[#5E6BFF]" />
+                    <h3 className="text-base font-bold text-[#5E6BFF]">Proactive AI CRM Audit</h3>
+                  </div>
+
+                  <button
+                    onClick={() => runAiAudit(selectedLead)}
+                    disabled={aiLoading}
+                    className="bg-[#5E6BFF] hover:bg-[#5E6BFF]/90 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    {aiLoading ? <Lucide.Loader size={12} className="animate-spin" /> : <Lucide.Sparkles size={12} />}
+                    Run AI Audit
+                  </button>
+                </div>
+
+                {aiLoading && (
+                  <div className="py-6 flex items-center justify-center">
+                    <Lucide.Loader size={24} className="animate-spin text-[#5E6BFF]" />
+                  </div>
+                )}
+
+                {aiResult ? (
+                  <div className="flex flex-col gap-4">
+                    
+                    {/* Grade & Score Card */}
+                    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-4 rounded-2xl flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-[#5E6BFF]/15 border border-[#5E6BFF]/30 flex items-center justify-center font-black text-xl text-[#5E6BFF]">
+                        {aiResult.grade}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-[var(--color-text-primary)]">Lead Quality Score: {aiResult.score}/100</div>
+                        <p className="text-[11px] text-[var(--color-text-secondary)] mt-1">{aiResult.summary}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-4 rounded-2xl">
+                      <span className="text-[10px] text-[#5E6BFF] uppercase tracking-wider font-bold block mb-1">Suggested Next Step</span>
+                      <p className="text-xs text-[var(--color-text-secondary)]">{aiResult.suggestedAction}</p>
+                    </div>
+
+                    {aiResult.proposedQuickReply && (
+                      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-4 rounded-2xl">
+                        <span className="text-[10px] text-[#30D5C8] uppercase tracking-wider font-bold block mb-1">Generated Draft Response</span>
+                        <p className="text-xs text-[var(--color-text-secondary)] italic mb-4">"{aiResult.proposedQuickReply}"</p>
+
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            onClick={() => handleMessageDispatch("whatsapp", aiResult.proposedQuickReply)}
+                            disabled={dispatchLoading}
+                            className="bg-[#16A34A]/10 border border-[#16A34A]/20 text-[#16A34A] hover:bg-[#16A34A]/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-1 justify-center"
+                          >
+                            <Lucide.MessageSquare size={13} />
+                            Send WhatsApp
+                          </button>
+                          <button
+                            onClick={() => handleMessageDispatch("sms", aiResult.proposedQuickReply)}
+                            disabled={dispatchLoading}
+                            className="bg-[#5E6BFF]/10 border border-[#5E6BFF]/20 text-[#5E6BFF] hover:bg-[#5E6BFF]/20 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-1 justify-center"
+                          >
+                            <Lucide.Send size={13} />
+                            Send SMS
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-xs text-[var(--color-text-muted)] italic">
+                    Grade this lead, assess deal closure probability, and auto-generate follow-up pitches with AI.
+                  </div>
+                )}
+              </div>
+
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-[var(--color-text-muted)] p-6">
+              <Lucide.Users size={48} className="mb-3 opacity-40" />
+              <h3 className="text-sm font-bold text-[var(--color-text-primary)]">No Contact Selected</h3>
+              <p className="text-xs mt-1 text-center max-w-[280px]">Select a contact from the sidebar or click the FAB to register a new lead.</p>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* 2. Floating Action Button (FAB) */}
+      <button
+        onClick={() => setAddModalOpen(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-[#5E6BFF] text-white flex items-center justify-center shadow-2xl hover:scale-105 transition-transform cursor-pointer z-20"
+        title="Add New Lead"
+      >
+        <Lucide.Plus size={28} />
+      </button>
+
+      {/* Add Contact Modal */}
+      {addModalOpen && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-3xl w-full max-w-[500px] shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold text-white">Register New Lead</h3>
+              <button onClick={() => setAddModalOpen(false)} className="text-[var(--color-text-secondary)] hover:text-white cursor-pointer">
+                <Lucide.X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddLead} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Contact / Company Name</label>
                 <input 
-                  type="text" 
+                  type="text"
+                  placeholder="Acme Corp"
                   value={newLeadForm.name}
                   onChange={(e) => setNewLeadForm({ ...newLeadForm, name: e.target.value })}
-                  placeholder="e.g. Initech Corporation" 
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
                   required
-                  style={{
-                    background: "rgba(255,255,255,0.02)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-xs)",
-                    padding: "10px 14px",
-                    color: "#FFF",
-                    outline: "none"
-                  }}
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>Email Address</label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Valuation ($)</label>
                   <input 
-                    type="email" 
-                    value={newLeadForm.email}
-                    onChange={(e) => setNewLeadForm({ ...newLeadForm, email: e.target.value })}
-                    placeholder="name@company.com" 
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-xs)",
-                      padding: "10px 14px",
-                      color: "#FFF",
-                      outline: "none"
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>Phone Number</label>
-                  <input 
-                    type="tel" 
-                    value={newLeadForm.phone}
-                    onChange={(e) => setNewLeadForm({ ...newLeadForm, phone: e.target.value })}
-                    placeholder="+1 (555) 000-0000" 
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-xs)",
-                      padding: "10px 14px",
-                      color: "#FFF",
-                      outline: "none"
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>Valuation ($)</label>
-                  <input 
-                    type="number" 
+                    type="number"
+                    placeholder="10000"
                     value={newLeadForm.value}
                     onChange={(e) => setNewLeadForm({ ...newLeadForm, value: e.target.value })}
-                    placeholder="5000" 
-                    style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-xs)",
-                      padding: "10px 14px",
-                      color: "#FFF",
-                      outline: "none"
-                    }}
+                    className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
                   />
                 </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>Initial Stage</label>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Status</label>
                   <select 
                     value={newLeadForm.status}
                     onChange={(e) => setNewLeadForm({ ...newLeadForm, status: e.target.value as LeadStatus })}
-                    style={{
-                      background: "#171717",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-xs)",
-                      padding: "10px 14px",
-                      color: "#FFF",
-                      outline: "none"
-                    }}
+                    className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
                   >
                     <option value="NEW">NEW</option>
                     <option value="CONTACTED">CONTACTED</option>
@@ -1309,83 +839,182 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Email Address</label>
+                <input 
+                  type="email"
+                  placeholder="name@company.com"
+                  value={newLeadForm.email}
+                  onChange={(e) => setNewLeadForm({ ...newLeadForm, email: e.target.value })}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Phone Number</label>
+                <input 
+                  type="tel"
+                  placeholder="+1555123456"
+                  value={newLeadForm.phone}
+                  onChange={(e) => setNewLeadForm({ ...newLeadForm, phone: e.target.value })}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Initial Notes</label>
+                <textarea 
+                  placeholder="Write initial description..."
+                  value={newLeadForm.notes}
+                  onChange={(e) => setNewLeadForm({ ...newLeadForm, notes: e.target.value })}
+                  rows={3}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all resize-none"
+                />
+              </div>
+
               <button 
-                type="submit" 
-                style={{
-                  background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-                  color: "#FFF",
-                  border: "none",
-                  borderRadius: "var(--radius-xs)",
-                  padding: "14px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  marginTop: "12px",
-                  transition: "transform var(--transition-spring)"
-                }}
+                type="submit"
+                className="bg-[#5E6BFF] hover:bg-[#5E6BFF]/95 text-white font-bold py-3 rounded-xl text-sm cursor-pointer shadow-md mt-2 transition-all"
               >
-                Add Lead to Funnel
+                Save Contact
               </button>
             </form>
-          </section>
-        ) : (
-          /* Billing & SaaS Subscriptions Tab */
-          <section className="glass-card" style={{ padding: "32px", borderRadius: "var(--radius-lg)", maxWidth: "700px" }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 600, marginBottom: "16px" }}>SaaS Subscription Plan</h2>
-            <p style={{ color: "var(--color-text-secondary)", marginBottom: "24px", fontSize: "0.95rem" }}>
-              Manage multi-tenant SaaS organizations, billing limits, and subscription tiers.
-            </p>
+          </div>
+        </div>
+      )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "30px" }}>
-              <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-border)", padding: "20px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ color: "var(--color-text-secondary)", fontSize: "0.8rem", marginBottom: "6px" }}>Organization Status</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-success)" }}>Active Workspace</div>
-                <div style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "4px" }}>ID: org_shubham_workspace</div>
-              </div>
-
-              <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-border)", padding: "20px", borderRadius: "var(--radius-md)" }}>
-                <div style={{ color: "var(--color-text-secondary)", fontSize: "0.8rem", marginBottom: "6px" }}>Subscription Tier</div>
-                <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-primary)" }}>Enterprise Team</div>
-                <div style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "4px" }}>Unlimited seats and sync queues</div>
-              </div>
+      {/* Edit Contact Modal */}
+      {editModalOpen && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-3xl w-full max-w-[500px] shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold text-white">Edit Contact Details</h3>
+              <button onClick={() => setEditModalOpen(false)} className="text-[var(--color-text-secondary)] hover:text-white cursor-pointer">
+                <Lucide.X size={20} />
+              </button>
             </div>
 
-            <div style={{ padding: "20px", border: "1px solid rgba(94, 107, 255, 0.2)", borderRadius: "var(--radius-md)", background: "rgba(94, 107, 255, 0.05)", marginBottom: "24px" }}>
-              <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "12px" }}>Workspace Usage Quota</h3>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "6px" }}>
-                <span>Neon PostgreSQL Queries</span>
-                <span style={{ fontWeight: 600 }}>1,204 / 50,000 / month</span>
-              </div>
-              <div style={{ height: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", overflow: "hidden", marginBottom: "16px" }}>
-                <div style={{ width: "2.4%", height: "100%", background: "var(--color-primary)" }} />
+            <form onSubmit={handleEditLead} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Contact / Company Name</label>
+                <input 
+                  type="text"
+                  value={editLeadForm.name}
+                  onChange={(e) => setEditLeadForm({ ...editLeadForm, name: e.target.value })}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                  required
+                />
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: "6px" }}>
-                <span>Google Drive File storage</span>
-                <span style={{ fontWeight: 600 }}>2 files / 1,000 max</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Valuation ($)</label>
+                  <input 
+                    type="number"
+                    value={editLeadForm.value}
+                    onChange={(e) => setEditLeadForm({ ...editLeadForm, value: e.target.value })}
+                    className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Status</label>
+                  <select 
+                    value={editLeadForm.status}
+                    onChange={(e) => setEditLeadForm({ ...editLeadForm, status: e.target.value as LeadStatus })}
+                    className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                  >
+                    <option value="NEW">NEW</option>
+                    <option value="CONTACTED">CONTACTED</option>
+                    <option value="QUALIFIED">QUALIFIED</option>
+                    <option value="WON">WON</option>
+                    <option value="LOST">LOST</option>
+                  </select>
+                </div>
               </div>
-              <div style={{ height: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", overflow: "hidden" }}>
-                <div style={{ width: "0.2%", height: "100%", background: "var(--color-accent)" }} />
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Email Address</label>
+                <input 
+                  type="email"
+                  value={editLeadForm.email}
+                  onChange={(e) => setEditLeadForm({ ...editLeadForm, email: e.target.value })}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                />
               </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Phone Number</label>
+                <input 
+                  type="tel"
+                  value={editLeadForm.phone}
+                  onChange={(e) => setEditLeadForm({ ...editLeadForm, phone: e.target.value })}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Notes</label>
+                <textarea 
+                  value={editLeadForm.notes}
+                  onChange={(e) => setEditLeadForm({ ...editLeadForm, notes: e.target.value })}
+                  rows={3}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all resize-none"
+                />
+              </div>
+
+              <button 
+                type="submit"
+                className="bg-[#5E6BFF] hover:bg-[#5E6BFF]/95 text-white font-bold py-3 rounded-xl text-sm cursor-pointer shadow-md mt-2 transition-all"
+              >
+                Save Changes
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Name Modal */}
+      {profileModalOpen && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-3xl w-full max-w-[400px] shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white">Edit Profile Settings</h3>
+              <button onClick={() => setProfileModalOpen(false)} className="text-[var(--color-text-secondary)] hover:text-white cursor-pointer">
+                <Lucide.X size={20} />
+              </button>
             </div>
 
-            <button 
-              onClick={() => alert("Simulated: Navigating to Stripe billing portal.")}
-              style={{
-                background: "transparent",
-                color: "#FFF",
-                border: "1px solid var(--color-border)",
-                padding: "12px 24px",
-                borderRadius: "var(--radius-xs)",
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "background var(--transition-normal)"
-              }}
-            >
-              Configure Payment Details
-            </button>
-          </section>
-        )}
-      </main>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Account Display Name</label>
+                <input 
+                  type="text"
+                  value={tempProfileName}
+                  onChange={(e) => setTempProfileName(e.target.value)}
+                  className="bg-[var(--color-bg)] border border-[var(--color-border)] text-white px-4 py-2.5 rounded-xl text-sm outline-none focus:border-[#5E6BFF] transition-all"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-3 mt-2">
+                <button 
+                  onClick={() => setProfileModalOpen(false)}
+                  className="bg-transparent border border-[var(--color-border)] text-[var(--color-text-primary)] font-bold py-2.5 rounded-xl text-xs flex-1 cursor-pointer transition-all hover:bg-[var(--color-border)]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleUpdateProfile}
+                  className="bg-[#5E6BFF] hover:bg-[#5E6BFF]/95 text-white font-bold py-2.5 rounded-xl text-xs flex-1 cursor-pointer transition-all"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

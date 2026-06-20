@@ -1,37 +1,42 @@
-import React, { useEffect, useState } from "react";
-import { Alert, ActivityIndicator } from "react-native";
-import { View, Text, ScrollView, TextInput, Pressable } from "../../tw/index";
+import React, { useEffect, useState, useRef } from "react";
+import { Alert, ActivityIndicator, Animated, Easing, Modal } from "react-native";
+import { useRouter } from "expo-router";
+import { View, Text, ScrollView, TextInput, Pressable, useTheme } from "../../tw/index";
 import { 
   getLocalLeads, 
   createLocalLead, 
-  updateLocalLead,
-  deleteLocalLead,
   getQueuedOperations 
 } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
-import { Lead } from "../../shared/types";
-import { recommendNextStep } from "../../shared/crm";
+import { Lead, LeadStatus } from "../../shared/types";
 import { LeadCardSkeleton } from "../../components/Skeleton";
 import * as SecureStore from "expo-secure-store";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function LeadsScreen() {
+  const router = useRouter();
+  const { theme, toggleTheme, colors } = useTheme();
+  
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [queueCount, setQueueCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [profileName, setProfileName] = useState("Shubham");
 
-  // Form
+  // Form State
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState<any>("NEW");
+  const [status, setStatus] = useState<LeadStatus>("NEW");
 
-  // Selected Lead & AI state
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<any | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  // Drawer / Modal Animation State
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [tempProfileName, setTempProfileName] = useState("");
+  
+  const slideAnim = useRef(new Animated.Value(600)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const loadData = async () => {
     try {
@@ -48,11 +53,56 @@ export default function LeadsScreen() {
 
   useEffect(() => {
     loadData();
+    async function loadProfile() {
+      const saved = await SecureStore.getItemAsync("profile_name");
+      if (saved) {
+        setProfileName(saved);
+        setTempProfileName(saved);
+      } else {
+        setTempProfileName("Shubham");
+      }
+    }
+    loadProfile();
   }, []);
+
+  const openDrawer = () => {
+    setDrawerVisible(true);
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 400,
+        easing: Easing.out(Easing.back(1.2)),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 0.5,
+        duration: 300,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const closeDrawer = () => {
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 600,
+        duration: 300,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setDrawerVisible(false);
+    });
+  };
 
   const handleCreateLead = async () => {
     if (!name.trim()) {
-      Alert.alert("Error", "Please fill in lead name");
+      Alert.alert("Error", "Please fill in contact name");
       return;
     }
 
@@ -64,7 +114,7 @@ export default function LeadsScreen() {
       phone: phone.trim() || "+1555019000",
       status: status,
       value: parseInt(value) || 0,
-      notes: "Created offline.",
+      notes: "Registered locally.",
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -76,8 +126,9 @@ export default function LeadsScreen() {
     setEmail("");
     setPhone("");
     setStatus("NEW");
+    closeDrawer();
     await loadData();
-    Alert.alert("Lead Saved", "Registered locally. Sync queued in background.");
+    Alert.alert("Contact Created", "Saved locally. Sync queued.");
   };
 
   const handleSync = async () => {
@@ -87,290 +138,279 @@ export default function LeadsScreen() {
     if (result.success) {
       Alert.alert("Sync Successful", `Synced ${result.syncedCount} modifications.`);
     } else {
-      Alert.alert("Sync Failed", "Check your backend URL and network connection.");
+      Alert.alert("Sync Failed", "Check your backend connection.");
     }
     await loadData();
   };
 
-  const runAiAudit = async (lead: Lead) => {
-    setAiLoading(true);
-    setAiResult(null);
-    try {
-      const token = await SecureStore.getItemAsync("auth_token");
-      const backendUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
-      
-      const response = await fetch(`${backendUrl}/api/ai`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token || "mock_shubham_token"}`
-        },
-        body: JSON.stringify(lead)
-      });
-
-      if (!response.ok) throw new Error("AI Endpoint failed");
-      const result = await response.json();
-      if (result.success) {
-        setAiResult(result.data);
-      } else {
-        throw new Error(result.error?.message || "Audit failed");
-      }
-    } catch (error: any) {
-      console.warn("AI endpoint unreachable, rendering offline fallback:", error.message);
-      // Offline fallback recommendation
-      setAiResult({
-        score: lead.value > 10000 ? 85 : 55,
-        grade: lead.value > 10000 ? "A" : "C",
-        summary: `Offline profile assessment. Lead "${lead.name}" valuation is $${lead.value.toLocaleString()}.`,
-        suggestedAction: recommendNextStep(lead),
-        proposedQuickReply: `Hi ${lead.name.split(" ")[0] || "there"}, following up on our chat. Let me know when you have 5 minutes to connect!`
-      });
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const sendQuickReplyMsg = async (channel: "whatsapp" | "sms", text: string, recipient: string) => {
-    if (!recipient) {
-      Alert.alert("Error", "No phone number available for this lead.");
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const token = await SecureStore.getItemAsync("auth_token");
-      const backendUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
-      
-      const response = await fetch(`${backendUrl}/api/${channel}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token || "mock_shubham_token"}`
-        },
-        body: JSON.stringify({ phone: recipient, text })
-      });
-
-      if (!response.ok) throw new Error("Dispatch failed");
-      const result = await response.json();
-      if (result.success) {
-        Alert.alert("Success", `${channel.toUpperCase()} message sent successfully!`);
-      } else {
-        throw new Error(result.error?.message || "Dispatch failed");
-      }
-    } catch (error: any) {
-      Alert.alert("Offline Dispatch Queued", `Network is offline. The gateway will retry dispatching to ${recipient} later.`);
-    } finally {
-      setActionLoading(false);
-    }
+  const handleSaveProfile = async () => {
+    if (!tempProfileName.trim()) return;
+    setProfileName(tempProfileName);
+    await SecureStore.setItemAsync("profile_name", tempProfileName);
+    setProfileModalVisible(false);
   };
 
   return (
-    <ScrollView className="flex-1 bg-bg px-4 py-6">
-      
-      {/* 1. Header with Offline Sync Indicator */}
-      <View className="flex-row justify-between items-center mb-6">
-        <View>
-          <Text className="text-white text-2xl font-bold tracking-tight">AutoReach CRM</Text>
-          <Text className="text-text-secondary text-sm">Offline-first local records</Text>
-        </View>
-        
-        <Pressable 
-          onPress={handleSync}
-          disabled={syncing}
-          className="bg-primary/10 border border-primary/30 px-4 py-2 rounded-full flex-row items-center gap-2"
-        >
-          <Text className="text-primary text-xs font-semibold">
-            {syncing ? "Syncing..." : `Sync (${queueCount})`}
-          </Text>
+    <View className="flex-1 bg-bg">
+      {/* 1. Header with Profile, Theme toggle, and Sync status */}
+      <View className="bg-surface border-b border-border px-4 py-4 flex-row justify-between items-center rounded-b-2xl shadow-2xl pt-12">
+        <Pressable onPress={() => setProfileModalVisible(true)} className="flex-row items-center gap-3">
+          <View className="w-10 h-10 rounded-full bg-primary/10 border border-primary/30 flex-center">
+            <Text className="text-primary font-bold text-sm">
+              {profileName.substring(0, 2).toUpperCase()}
+            </Text>
+          </View>
+          <View>
+            <Text className="text-text-secondary text-3xs uppercase tracking-wider font-semibold">User Account</Text>
+            <Text className="text-white text-base font-bold">{profileName}</Text>
+          </View>
         </Pressable>
-      </View>
+        
+        <View className="flex-row items-center gap-2">
+          {/* Sync Badge */}
+          <Pressable 
+            onPress={handleSync}
+            disabled={syncing}
+            className="bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-full flex-row items-center gap-1"
+          >
+            <Ionicons name="cloud-upload-outline" size={14} color={colors.primary} />
+            <Text className="text-primary text-3xs font-bold">
+              {syncing ? "..." : `${queueCount}`}
+            </Text>
+          </Pressable>
 
-      {/* 2. Sync Queue Warning Banner */}
-      {queueCount > 0 && (
-        <View className="bg-warning/10 border border-warning/30 p-3 rounded-lg mb-6 flex-row justify-between items-center">
-          <Text className="text-warning text-xs font-semibold">⚠️ {queueCount} modifications pending cloud upload</Text>
-          <Pressable onPress={handleSync}>
-            <Text className="text-warning text-xs font-bold underline">Sync Now</Text>
+          {/* Theme Toggle */}
+          <Pressable 
+            onPress={toggleTheme}
+            className="w-9 h-9 rounded-full bg-surface border border-border flex-center"
+          >
+            <Ionicons 
+              name={theme === "dark" ? "sunny-outline" : "moon-outline"} 
+              size={18} 
+              color={colors.text} 
+            />
           </Pressable>
         </View>
-      )}
+      </View>
 
-      {/* 3. Selected Lead Drawer / Details */}
-      {selectedLead && (
-        <View className="bg-card border-2 border-primary/50 p-5 rounded-xl mb-6 shadow-2xl">
-          <View className="flex-row justify-between items-center mb-3">
-            <Text className="text-white text-lg font-bold">{selectedLead.name}</Text>
-            <Pressable onPress={() => { setSelectedLead(null); setAiResult(null); }}>
-              <Text className="text-text-muted text-sm font-bold">Close ✕</Text>
+      {/* Leads List Scroll view */}
+      <ScrollView className="flex-1 px-4 py-4" contentContainerClassName="pb-24">
+        {/* Sync Warn banner */}
+        {queueCount > 0 && (
+          <View className="bg-warning/10 border border-warning/20 p-3.5 rounded-xl mb-4 flex-row justify-between items-center">
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="warning-outline" size={16} color={colors.warning} />
+              <Text className="text-warning text-xs font-semibold">{queueCount} updates waiting to sync</Text>
+            </View>
+            <Pressable onPress={handleSync}>
+              <Text className="text-warning text-xs font-bold underline">Sync</Text>
             </Pressable>
           </View>
+        )}
 
-          <View className="bg-bg border border-border p-3 rounded-lg mb-4">
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-text-secondary text-xs">Value:</Text>
-              <Text className="text-white text-xs font-bold">${selectedLead.value.toLocaleString()}</Text>
-            </View>
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-text-secondary text-xs">Email:</Text>
-              <Text className="text-white text-xs">{selectedLead.email || "None"}</Text>
-            </View>
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-text-secondary text-xs">Phone:</Text>
-              <Text className="text-white text-xs">{selectedLead.phone || "None"}</Text>
-            </View>
-            <View className="flex-row justify-between">
-              <Text className="text-text-secondary text-xs">Status:</Text>
-              <Text className="text-primary text-xs font-bold">{selectedLead.status}</Text>
-            </View>
-          </View>
+        <View className="mb-4">
+          <Text className="text-white text-lg font-bold">My Pipelines</Text>
+          <Text className="text-text-secondary text-xs">Tap a contact to view full details and AI audit</Text>
+        </View>
 
-          {/* AI CRM Agent Module */}
-          <View className="bg-primary/5 border border-primary/20 p-4 rounded-lg">
-            <View className="flex-row justify-between items-center mb-3">
-              <Text className="text-primary text-xs font-bold">✨ Proactive AI CRM Agent</Text>
+        {/* List of Contacts */}
+        <View className="gap-3">
+          {loading ? (
+            <>
+              <LeadCardSkeleton />
+              <LeadCardSkeleton />
+              <LeadCardSkeleton />
+            </>
+          ) : leads.length === 0 ? (
+            <View className="py-12 items-center justify-center">
+              <Ionicons name="people-outline" size={48} color={colors.textMuted} className="mb-2" />
+              <Text className="text-text-secondary text-sm italic">No contacts registered.</Text>
+              <Text className="text-text-muted text-xs mt-1">Tap the + button to add one.</Text>
+            </View>
+          ) : (
+            leads.map((lead) => (
               <Pressable 
-                onPress={() => runAiAudit(selectedLead)}
-                disabled={aiLoading}
-                className="bg-primary/20 border border-primary/40 px-3 py-1 rounded-md"
+                key={lead.id} 
+                onPress={() => router.push(`/contact/${lead.id}`)}
+                className="bg-card border border-border p-4 rounded-xl flex-row justify-between items-center shadow-md"
               >
-                <Text className="text-primary text-2xs font-bold">
-                  {aiLoading ? "Analyzing..." : "Run AI Audit"}
-                </Text>
+                <View className="flex-1 pr-3">
+                  <Text className="text-white font-bold text-base mb-1">{lead.name}</Text>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="bg-primary/10 text-primary text-3xs px-2 py-0.5 rounded font-bold">
+                      {lead.status}
+                    </Text>
+                    <Text className="text-text-muted text-2xs">{lead.phone}</Text>
+                  </View>
+                </View>
+                
+                <View className="items-end gap-1">
+                  <Text className="text-primary font-bold text-sm">${lead.value.toLocaleString()}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </View>
               </Pressable>
-            </View>
-
-            {aiLoading && <ActivityIndicator color="#5E6BFF" style={{ marginVertical: 10 }} />}
-
-            {aiResult && (
-              <View className="gap-3">
-                <View className="flex-row items-center gap-3">
-                  <View className="bg-primary/20 w-12 h-12 rounded-lg items-center justify-center border border-primary/40">
-                    <Text className="text-primary text-xl font-black">{aiResult.grade}</Text>
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-white text-xs font-bold">Lead Score: {aiResult.score}/100</Text>
-                    <Text className="text-text-secondary text-2xs">{aiResult.summary}</Text>
-                  </View>
-                </View>
-
-                <View className="bg-bg border border-border p-2 rounded">
-                  <Text className="text-primary text-2xs font-bold mb-1">Suggested Next Step:</Text>
-                  <Text className="text-text-secondary text-2xs">{aiResult.suggestedAction}</Text>
-                </View>
-
-                {aiResult.proposedQuickReply && (
-                  <View className="bg-bg border border-border p-2 rounded">
-                    <Text className="text-accent text-2xs font-bold mb-1">Generated Draft Reply:</Text>
-                    <Text className="text-text-secondary text-2xs italic mb-2">"{aiResult.proposedQuickReply}"</Text>
-                    
-                    <View className="flex-row gap-2">
-                      <Pressable 
-                        onPress={() => sendQuickReplyMsg("whatsapp", aiResult.proposedQuickReply, selectedLead.phone || "")}
-                        disabled={actionLoading}
-                        className="bg-success/20 border border-success/40 flex-1 py-2 rounded items-center"
-                      >
-                        <Text className="text-success text-2xs font-bold">Send WhatsApp</Text>
-                      </Pressable>
-                      <Pressable 
-                        onPress={() => sendQuickReplyMsg("sms", aiResult.proposedQuickReply, selectedLead.phone || "")}
-                        disabled={actionLoading}
-                        className="bg-primary/20 border border-primary/40 flex-1 py-2 rounded items-center"
-                      >
-                        <Text className="text-primary text-2xs font-bold">Send SMS</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
+            ))
+          )}
         </View>
-      )}
+      </ScrollView>
 
-      {/* 4. New Lead Register Form */}
-      <View className="bg-surface border border-border p-4 rounded-xl mb-6">
-        <Text className="text-white text-base font-semibold mb-3">Register New Lead</Text>
-        <TextInput
-          placeholder="Company Name"
-          placeholderTextColor="#6B7280"
-          value={name}
-          onChangeText={setName}
-          className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-3"
-        />
-        <View className="flex-row gap-3 mb-3">
-          <TextInput
-            placeholder="Valuation ($)"
-            placeholderTextColor="#6B7280"
-            value={value}
-            onChangeText={setValue}
-            keyboardType="numeric"
-            className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm flex-1"
-          />
-          <View className="border border-border rounded-lg bg-bg justify-center px-2 flex-1">
-            <TextInput
-              placeholder="Status (e.g. NEW)"
-              placeholderTextColor="#6B7280"
-              value={status}
-              onChangeText={setStatus}
-              className="text-white text-sm"
-            />
-          </View>
-        </View>
-        <TextInput
-          placeholder="Email Address"
-          placeholderTextColor="#6B7280"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-3"
-        />
-        <TextInput
-          placeholder="Phone Number (WhatsApp/SMS)"
-          placeholderTextColor="#6B7280"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          className="bg-bg border border-border text-white px-3 py-2 rounded-lg text-sm mb-4"
-        />
+      {/* 2. Floating Action Button (FAB) */}
+      <View style={{ position: 'absolute', bottom: 20, right: 20 }}>
         <Pressable 
-          onPress={handleCreateLead}
-          className="bg-primary p-3 rounded-lg items-center"
+          onPress={openDrawer}
+          className="w-14 h-14 rounded-full bg-primary flex-center shadow-2xl"
         >
-          <Text className="text-white font-bold text-sm">Save Offline</Text>
+          <Ionicons name="add" size={28} color="#FFFFFF" />
         </Pressable>
       </View>
 
-      {/* 5. Leads List */}
-      <View className="gap-4 mb-10">
-        <Text className="text-white text-lg font-bold">Local Pipelines</Text>
-        {loading ? (
-          <>
-            <LeadCardSkeleton />
-            <LeadCardSkeleton />
-          </>
-        ) : leads.length === 0 ? (
-          <Text className="text-text-secondary text-sm italic">No leads registered. Add one above.</Text>
-        ) : (
-          leads.map((lead) => (
+      {/* 3. Slide-up Form Drawer Modal */}
+      {drawerVisible && (
+        <Modal transparent visible={drawerVisible} animationType="none">
+          <View style={{ flex: 1, justifyContent: "flex-end" }}>
+            {/* Backdrop */}
             <Pressable 
-              key={lead.id} 
-              onPress={() => setSelectedLead(lead)}
-              className={`bg-card border p-4 rounded-xl ${selectedLead?.id === lead.id ? 'border-primary' : 'border-border'}`}
+              onPress={closeDrawer}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             >
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-white font-bold text-base">{lead.name}</Text>
-                <Text className="text-primary font-bold text-sm">${lead.value.toLocaleString()}</Text>
-              </View>
-              
-              <View className="flex-row justify-between items-center">
-                <Text className="bg-warning/20 text-warning text-xs px-2 py-1 rounded-md font-semibold">
-                  {lead.status}
-                </Text>
-                <Text className="text-text-muted text-xs">Tap to view AI analysis ➔</Text>
-              </View>
+              <Animated.View style={{ flex: 1, backgroundColor: "#000", opacity: fadeAnim }} />
             </Pressable>
-          ))
-        )}
-      </View>
-    </ScrollView>
+
+            {/* Slide up content */}
+            <Animated.View 
+              style={{ 
+                transform: [{ translateY: slideAnim }],
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                backgroundColor: colors.surface,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                padding: 24,
+              }}
+            >
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-white text-lg font-bold">Create New Contact</Text>
+                <Pressable onPress={closeDrawer} className="p-1">
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+
+              <TextInput
+                placeholder="Full Name / Company"
+                placeholderTextColor={colors.textMuted}
+                value={name}
+                onChangeText={setName}
+                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-3"
+              />
+
+              <View className="mb-3">
+                <TextInput
+                  placeholder="Valuation ($)"
+                  placeholderTextColor={colors.textMuted}
+                  value={value}
+                  onChangeText={setValue}
+                  keyboardType="numeric"
+                  className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm w-full"
+                />
+              </View>
+
+              <View className="mb-3">
+                <Text className="text-text-secondary text-3xs uppercase tracking-wide font-semibold mb-2 px-1">Status</Text>
+                <View className="flex-row gap-2" style={{ flexWrap: "wrap" }}>
+                  {(["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const).map((statusOption) => {
+                    const isSelected = status === statusOption;
+                    let activeBg = colors.primary;
+                    if (statusOption === "WON") activeBg = colors.success;
+                    if (statusOption === "LOST") activeBg = colors.danger;
+                    if (statusOption === "QUALIFIED") activeBg = colors.primary;
+                    if (statusOption === "CONTACTED") activeBg = colors.accent;
+                    
+                    return (
+                      <Pressable
+                        key={statusOption}
+                        onPress={() => setStatus(statusOption)}
+                        className="px-3 py-2 rounded-xl border border-transparent"
+                        style={
+                          isSelected
+                            ? { backgroundColor: activeBg }
+                            : { backgroundColor: colors.bg, borderColor: colors.border }
+                        }
+                      >
+                        <Text 
+                          className={isSelected ? "text-white text-xs font-bold" : "text-text-secondary text-xs"}
+                          style={isSelected ? { color: "#FFFFFF" } : undefined}
+                        >
+                          {statusOption}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <TextInput
+                placeholder="Email Address"
+                placeholderTextColor={colors.textMuted}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-3"
+              />
+
+              <TextInput
+                placeholder="Phone Number (e.g. +1555123456)"
+                placeholderTextColor={colors.textMuted}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-5"
+              />
+
+              <Pressable 
+                onPress={handleCreateLead}
+                className="bg-primary py-3.5 rounded-xl items-center shadow-lg"
+              >
+                <Text className="text-white font-bold text-sm">Save Contact</Text>
+              </Pressable>
+            </Animated.View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Profile Edit Modal */}
+      {profileModalVisible && (
+        <Modal transparent visible={profileModalVisible} animationType="slide">
+          <View className="flex-1 flex-center bg-black/70 px-6">
+            <View className="bg-surface border border-border p-6 rounded-2xl w-full">
+              <Text className="text-white text-lg font-bold mb-1">Edit Account Profile</Text>
+              <Text className="text-text-secondary text-xs mb-4">Set your display name inside the top bar.</Text>
+
+              <TextInput
+                placeholder="Profile Name"
+                placeholderTextColor={colors.textMuted}
+                value={tempProfileName}
+                onChangeText={setTempProfileName}
+                className="bg-bg border border-border text-white px-3.5 py-2.5 rounded-xl text-sm mb-4"
+              />
+
+              <View className="flex-row gap-3">
+                <Pressable 
+                  onPress={() => setProfileModalVisible(false)}
+                  className="bg-border/20 border border-border py-3 rounded-xl flex-1 items-center"
+                >
+                  <Text className="text-white font-bold text-sm">Cancel</Text>
+                </Pressable>
+                <Pressable 
+                  onPress={handleSaveProfile}
+                  className="bg-primary py-3 rounded-xl flex-1 items-center"
+                >
+                  <Text className="text-white font-bold text-sm">Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </View>
   );
 }
