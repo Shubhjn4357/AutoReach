@@ -12,8 +12,11 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -21,8 +24,11 @@ export async function POST(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -31,8 +37,14 @@ export async function POST(req: NextRequest) {
 
     if (!fileName || !mimeType || !fileContent) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Missing required file parameters" } },
-        { status: 400 }
+        {
+          success: false,
+          error: {
+            code: "BAD_REQUEST",
+            message: "Missing required file parameters",
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -45,12 +57,20 @@ export async function POST(req: NextRequest) {
     }
 
     const tokenToUse = accessToken || "mock_token";
-    const uploadResult = await uploadToGoogleDrive(tokenToUse, fileName, mimeType, bufferContent);
+    const uploadResult = await uploadToGoogleDrive(
+      tokenToUse,
+      fileName,
+      mimeType,
+      bufferContent,
+    );
 
     if (!uploadResult.success) {
       return NextResponse.json(
-        { success: false, error: { code: "DRIVE_UPLOAD_FAILED", message: uploadResult.error } },
-        { status: 500 }
+        {
+          success: false,
+          error: { code: "DRIVE_UPLOAD_FAILED", message: uploadResult.error },
+        },
+        { status: 500 },
       );
     }
 
@@ -66,7 +86,7 @@ export async function POST(req: NextRequest) {
         mimeType: uploadResult.mimeType,
         size: uploadResult.size,
         webViewLink: uploadResult.webViewLink || null,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
     } catch (dbError) {
       console.warn("Saving drive file metadata to SQLite failed:", dbError);
@@ -76,15 +96,18 @@ export async function POST(req: NextRequest) {
       success: true,
       data: {
         id: driveFileRecordId,
-        ...uploadResult
+        ...uploadResult,
       },
       message: "File uploaded and registered successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }
@@ -94,8 +117,11 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -103,14 +129,20 @@ export async function GET(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
     let files: any[] = [];
     try {
-      files = await db.select().from(driveFiles).where(eq(driveFiles.userId, decoded.userId));
+      files = await db
+        .select()
+        .from(driveFiles)
+        .where(eq(driveFiles.userId, decoded.userId));
     } catch (error) {
       files = [];
     }
@@ -119,12 +151,15 @@ export async function GET(req: NextRequest) {
       success: true,
       data: files,
       message: `Retrieved ${files.length} drive files`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

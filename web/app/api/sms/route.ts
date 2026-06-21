@@ -9,8 +9,11 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -18,8 +21,11 @@ export async function POST(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -28,8 +34,14 @@ export async function POST(req: NextRequest) {
 
     if (!phone || !text) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Phone and text content are required" } },
-        { status: 400 }
+        {
+          success: false,
+          error: {
+            code: "BAD_REQUEST",
+            message: "Phone and text content are required",
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -37,8 +49,15 @@ export async function POST(req: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { success: false, error: { code: "INTEGRATION_FAILED", message: result.error, gateway: result.gatewayType } },
-        { status: 500 }
+        {
+          success: false,
+          error: {
+            code: "INTEGRATION_FAILED",
+            message: result.error,
+            gateway: result.gatewayType,
+          },
+        },
+        { status: 500 },
       );
     }
 
@@ -46,12 +65,15 @@ export async function POST(req: NextRequest) {
       success: true,
       data: result,
       message: `SMS dispatched successfully via ${result.gatewayType}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

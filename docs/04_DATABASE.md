@@ -19,10 +19,10 @@ To support the Offline-First, Sync-Later architecture, the local schema contains
 // Example sync queue table structure in SQLite
 export const syncQueue = sqliteTable("sync_queue", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  table: text("table").notNull(),          // e.g. "leads", "tasks"
-  operation: text("operation").notNull(),  // "CREATE" | "UPDATE" | "DELETE"
+  table: text("table").notNull(), // e.g. "leads", "tasks"
+  operation: text("operation").notNull(), // "CREATE" | "UPDATE" | "DELETE"
   recordId: text("record_id").notNull(),
-  payload: text("payload").notNull(),       // JSON representation of the change
+  payload: text("payload").notNull(), // JSON representation of the change
   createdAt: integer("created_at").notNull(),
   attempts: integer("attempts").default(0),
 });
@@ -34,4 +34,3 @@ export const syncQueue = sqliteTable("sync_queue", {
   - Generate libSQL/SQLite migrations: `drizzle-kit generate`
   - Push SQLite/libSQL changes directly (for dev): `drizzle-kit push`
 - Local mobile schema checks for DB version at startup and applies migrations before rendering the UI.
-

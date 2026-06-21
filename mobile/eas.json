@@ -31,12 +31,6 @@
   },
   "submit": {
     "production": {
-      "android": {
-        "keystorePath": "./key.keystore",
-        "keystorePassword": "${GOOGLE_PLAY_KEYSTORE_PASSWORD}",
-        "keyAlias": "${GOOGLE_PLAY_KEY_ALIAS}",
-        "keyPassword": "${GOOGLE_PLAY_KEY_PASSWORD}"
-      }
     }
   }
 }

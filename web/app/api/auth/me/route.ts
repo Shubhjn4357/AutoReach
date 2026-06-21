@@ -11,8 +11,11 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -20,8 +23,11 @@ export async function GET(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid or expired token" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid or expired token" },
+        },
+        { status: 401 },
       );
     }
 
@@ -39,8 +45,11 @@ export async function GET(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { success: false, error: { code: "NOT_FOUND", message: "User not found" } },
-        { status: 404 }
+        {
+          success: false,
+          error: { code: "NOT_FOUND", message: "User not found" },
+        },
+        { status: 404 },
       );
     }
 
@@ -52,16 +61,19 @@ export async function GET(req: NextRequest) {
           email: user.email,
           name: user.name,
           role: user.role,
-          organizationId: user.organizationId
-        }
+          organizationId: user.organizationId,
+        },
       },
       message: "User profile retrieved successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

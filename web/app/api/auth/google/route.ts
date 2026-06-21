@@ -13,16 +13,22 @@ export async function POST(req: NextRequest) {
 
     if (!idToken) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Missing idToken" } },
-        { status: 400 }
+        {
+          success: false,
+          error: { code: "BAD_REQUEST", message: "Missing idToken" },
+        },
+        { status: 400 },
       );
     }
 
     const googleProfile = await verifyGoogleToken(idToken);
     if (!googleProfile) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid idToken" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid idToken" },
+        },
+        { status: 401 },
       );
     }
 
@@ -32,7 +38,7 @@ export async function POST(req: NextRequest) {
       email: googleProfile.email,
       name: googleProfile.name,
       role: "ADMIN",
-      organizationId: null as string | null
+      organizationId: null as string | null,
     };
 
     try {
@@ -50,7 +56,7 @@ export async function POST(req: NextRequest) {
           email: existingUser.email,
           name: existingUser.name || googleProfile.name,
           role: existingUser.role,
-          organizationId: existingUser.organizationId
+          organizationId: existingUser.organizationId,
         };
       } else {
         // Create default organization
@@ -60,7 +66,7 @@ export async function POST(req: NextRequest) {
           name: `${googleProfile.name}'s Workspace`,
           subscriptionTier: "FREE",
           subscriptionStatus: "ACTIVE",
-          createdAt: Date.now()
+          createdAt: Date.now(),
         });
 
         // Insert new user
@@ -71,34 +77,40 @@ export async function POST(req: NextRequest) {
           googleId: googleProfile.googleId,
           organizationId: orgId,
           role: "ADMIN",
-          createdAt: Date.now()
+          createdAt: Date.now(),
         });
 
         finalUser.organizationId = orgId;
       }
     } catch (dbError) {
-      console.error("SQLite connection error, operating in memory-only fallback mode:", dbError);
+      console.error(
+        "SQLite connection error, operating in memory-only fallback mode:",
+        dbError,
+      );
     }
 
     const token = signToken({
       userId: finalUser.id,
       email: finalUser.email,
-      name: finalUser.name
+      name: finalUser.name,
     });
 
     return NextResponse.json({
       success: true,
       data: {
         token,
-        user: finalUser
+        user: finalUser,
       },
       message: "Authenticated successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

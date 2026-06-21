@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,149 +14,307 @@ import { useRouter } from "expo-router";
 import { useAppStore } from "../services/store";
 import { useTheme } from "../services/theme";
 import { Ionicons } from "@expo/vector-icons";
+import { useThrottle } from "../hook/useThrottle";
+import { CustomAlert, AlertButton } from "../components/CustomAlert";
+import { Host } from "@expo/ui";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as WebBrowser from "expo-web-browser";
+
+WebBrowser.maybeCompleteAuthSession();
+
+try {
+  GoogleSignin.configure({
+    webClientId: "625470834164-devclientid.apps.googleusercontent.com", // Replace with your Google OAuth client ID
+    offlineAccess: true,
+  });
+} catch (e) {
+  console.warn("GoogleSignin configure failed", e);
+}
 
 export default function AuthScreen() {
   const router = useRouter();
   const store = useAppStore();
   const { colors, glassStyle, glassInputStyle } = useTheme();
 
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [devUsername, setDevUsername] = useState("shubham");
   const [loading, setLoading] = useState(false);
+  const token = store.token;
 
-  const handleAuth = async () => {
-    if (!email.trim() || !password.trim() || (!isLogin && !name.trim())) {
-      Alert.alert("Validation Error", "Please fill in all fields.");
-      return;
-    }
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: "info" | "success" | "warning" | "error";
+    buttons?: AlertButton[];
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
 
+  const showCustomAlert = (
+    title: string,
+    message: string,
+    type: "info" | "success" | "warning" | "error" = "info",
+    buttons?: AlertButton[],
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons,
+    });
+  };
+
+  const handleGoogleLogin = async (idToken: string) => {
     setLoading(true);
     try {
-      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const payload = isLogin
-        ? { email: email.trim(), password }
-        : { email: email.trim(), password, name: name.trim() };
-
-      const response = await fetch(`${store.apiUrl}${endpoint}`, {
+      const response = await fetch(`${store.apiUrl}/api/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ idToken }),
       });
 
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || "Authentication failed");
+        throw new Error(
+          result.error?.message || "Google Authentication failed",
+        );
       }
 
-      const { token, user } = result.data;
-      await store.setToken(token);
+      const { token: authToken, user } = result.data;
+      await store.setToken(authToken);
       store.setUser(user);
 
-      Alert.alert(isLogin ? "Welcome Back!" : "Account Created!", `Logged in as ${user.name}`);
-      router.replace("/(tabs)");
+      showCustomAlert(
+        "Google Sign-In Success",
+        `Welcome back, ${user.name}!`,
+        "success",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      Alert.alert("Authentication Failed", message);
+      showCustomAlert("Google Authentication Failed", message, "error");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleNativeGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data?.idToken;
+      if (!idToken) {
+        throw new Error("No ID Token returned from Google Sign-In");
+      }
+      await handleGoogleLogin(idToken);
+    } catch (error: any) {
+      console.warn("Google native login error", error);
+      showCustomAlert(
+        "Native Google Sign-In Failed",
+        error.message || "Failed to authenticate",
+        "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBypassLogin = async () => {
+    if (!devUsername.trim()) {
+      showCustomAlert(
+        "Validation Error",
+        "Please enter a bypass username.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const mockToken = `mock_${devUsername.trim().toLowerCase()}`;
+
+      // Try connecting to the Next.js backend server
+      try {
+        const response = await fetch(`${store.apiUrl}/api/auth/google`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idToken: mockToken }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          const { token: authToken, user } = result.data;
+          await store.setToken(authToken);
+          store.setUser(user);
+          showCustomAlert(
+            "Bypass Success",
+            `Logged in as ${user.name} (Developer Mode)`,
+            "success",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+          );
+          return;
+        }
+      } catch (netError) {
+        console.warn(
+          "Backend API unreachable, using client-side offline bypass:",
+          netError,
+        );
+      }
+
+      // Offline Fallback Mode
+      const offlineUser = {
+        id: `u_mock_${devUsername.trim().toLowerCase()}`,
+        email: `${devUsername.trim().toLowerCase()}@example.com`,
+        name: devUsername.trim().toUpperCase(),
+        role: "ADMIN",
+        organizationId: "org_mock_123",
+      };
+      await store.setToken(mockToken);
+      store.setUser(offlineUser);
+      showCustomAlert(
+        "Bypass Success (Offline Fallback)",
+        `Logged in locally as ${offlineUser.name}`,
+        "success",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      showCustomAlert("Bypass Authentication Failed", message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const throttledBypassLogin = useThrottle(handleBypassLogin, 2000);
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={[styles.container, { backgroundColor: colors.bg }]}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Glow effect background element */}
-        <View style={[styles.glowBlob, { backgroundColor: colors.primary }]} />
+    <Host style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={[styles.container, { backgroundColor: colors.bg }]}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Glow effect background element */}
+          <View
+            style={[styles.glowBlob, { backgroundColor: colors.primary }]}
+          />
 
-        <View style={styles.headerContainer}>
-          <Ionicons name="sparkles" size={48} color={colors.primary} />
-          <Text style={[styles.title, { color: colors.text }]}>AutoReach</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            CRM Workspace & Automation Client
-          </Text>
-        </View>
+          <View style={styles.headerContainer}>
+            <Ionicons name="sparkles" size={48} color={colors.primary} />
+            <Text style={[styles.title, { color: colors.text }]}>
+              AutoReach
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              CRM Workspace & Automation Client
+            </Text>
+          </View>
 
-        {/* Glassmorphic Auth Card */}
-        <View style={glassStyle}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            {isLogin ? "Login to Workspace" : "Create Account"}
-          </Text>
+          {/* Glassmorphic Auth Card */}
+          <View style={glassStyle}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>
+              Workspace Authentication
+            </Text>
 
-          {!isLogin && (
+            {/* Google Credentials Sign In */}
+            <View style={styles.googleContainer}>
+              <Text
+                style={[styles.sectionLabel, { color: colors.textSecondary }]}
+              >
+                Google Credentials Sign-In
+              </Text>
+
+              <Pressable
+                onPress={handleNativeGoogleLogin}
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: "#4285F4", flexDirection: "row", gap: 8 },
+                ]}
+              >
+                <Ionicons name="logo-google" size={16} color="#FFFFFF" />
+                <Text style={styles.actionButtonText}>Sign In with Google</Text>
+              </Pressable>
+            </View>
+
+            {/* Separator / Divider */}
+            <View style={styles.separatorContainer}>
+              <View
+                style={[
+                  styles.separatorLine,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+              <Text style={[styles.separatorText, { color: colors.textMuted }]}>
+                OR BYPASS
+              </Text>
+              <View
+                style={[
+                  styles.separatorLine,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            </View>
+
+            {/* Developer Bypass Sign In */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Full Name</Text>
+              <Text
+                style={[styles.inputLabel, { color: colors.textSecondary }]}
+              >
+                Developer Username / Email
+              </Text>
               <TextInput
-                placeholder="John Doe"
+                placeholder="e.g. shubham"
                 placeholderTextColor={colors.textMuted}
-                value={name}
-                onChangeText={setName}
+                value={devUsername}
+                onChangeText={setDevUsername}
+                autoCapitalize="none"
                 style={glassInputStyle}
               />
             </View>
-          )}
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Email Address</Text>
-            <TextInput
-              placeholder="you@domain.com"
-              placeholderTextColor={colors.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              style={glassInputStyle}
-            />
+            <Pressable
+              onPress={throttledBypassLogin}
+              disabled={loading}
+              style={({ pressed }: { pressed: boolean }) => [
+                styles.actionButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: pressed || loading ? 0.8 : 1,
+                },
+              ]}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.actionButtonText}>
+                  Developer Login Bypass
+                </Text>
+              )}
+            </Pressable>
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Password</Text>
-            <TextInput
-              placeholder="••••••••"
-              placeholderTextColor={colors.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              style={glassInputStyle}
-            />
-          </View>
-
-          <Pressable
-            onPress={handleAuth}
-            disabled={loading}
-            style={({ pressed }: { pressed: boolean }) => [
-              styles.actionButton,
-              {
-                backgroundColor: colors.primary,
-                opacity: pressed || loading ? 0.8 : 1,
-              },
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.actionButtonText}>
-                {isLogin ? "Sign In" : "Register Workspace"}
-              </Text>
-            )}
-          </Pressable>
-
-          <Pressable onPress={() => setIsLogin(!isLogin)} style={styles.toggleButton}>
-            <Text style={[styles.toggleButtonText, { color: colors.primary }]}>
-              {isLogin
-                ? "Don't have an account? Sign Up"
-                : "Already have an account? Sign In"}
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          buttons={alertConfig.buttons}
+          onClose={() =>
+            setAlertConfig((prev) => ({ ...prev, visible: false }))
+          }
+        />
+      </KeyboardAvoidingView>
+    </Host>
   );
 }
 
@@ -200,6 +357,30 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
+  googleContainer: {
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  separatorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 20,
+    gap: 10,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+  },
+  separatorText: {
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 0.8,
+  },
   inputGroup: {
     marginBottom: 16,
   },
@@ -214,6 +395,7 @@ const styles = StyleSheet.create({
   actionButton: {
     borderRadius: 12,
     height: 48,
+    width: "100%",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 8,
@@ -227,13 +409,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "bold",
-  },
-  toggleButton: {
-    marginTop: 16,
-    alignItems: "center",
-  },
-  toggleButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
   },
 });

@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  Alert,
   Animated,
   Easing,
   Modal,
@@ -10,6 +9,8 @@ import {
   ScrollView,
   TextInput,
   Pressable,
+  RefreshControl,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,13 +18,23 @@ import { useTheme } from "../../services/theme";
 import {
   getLocalLeads,
   createLocalLead,
-  getQueuedOperations
+  getQueuedOperations,
+  logSentMessage,
+  getLocalTemplates,
+  MessageTemplate,
 } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
 import { Lead, LeadStatus } from "../../shared/types";
 import { LeadCardSkeleton } from "../../components/Skeleton";
-import * as SecureStore from "expo-secure-store";
+import { getSecureItem, saveSecureItem } from "../../services/store";
 import { Ionicons } from "@expo/vector-icons";
+import { triggerLocalNotification } from "../../services/notifications";
+import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { Host } from "@expo/ui";
+import * as Contacts from "expo-contacts";
+import * as Linking from "expo-linking";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useDebounce } from "../../hook/useDebounce";
 
 interface LeadCreateFormData {
   name: string;
@@ -35,73 +46,306 @@ interface LeadCreateFormData {
 
 export default function LeadsScreen() {
   const router = useRouter();
-  const { theme, toggleTheme, colors, glassStyle, glassInputStyle } = useTheme();
+  const { theme, toggleTheme, colors, glassStyle, glassInputStyle } =
+    useTheme();
   const insets = useSafeAreaInsets();
 
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [queueCount, setQueueCount] = useState(0);
-  const [syncing, setSyncing] = useState(false);
-  const [profileName, setProfileName] = useState("Shubham");
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: "info" | "success" | "warning" | "error";
+    buttons?: AlertButton[];
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
 
-  // Singular form state structure
+  const showCustomAlert = (
+    title: string,
+    message: string,
+    type: "info" | "success" | "warning" | "error" = "info",
+    buttons?: AlertButton[],
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons,
+    });
+  };
+
+  const queryClient = useQueryClient();
+
+  // Search & Filter Status
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeStageFilter, setActiveStageFilter] = useState<
+    LeadStatus | "ALL"
+  >("ALL");
+
+  const debouncedSearch = useDebounce(searchQuery, 300);
+
+  const {
+    data: leads = [],
+    isLoading: leadsLoading,
+    refetch: refetchLeads,
+  } = useQuery<Lead[]>({
+    queryKey: ["leads"],
+    queryFn: getLocalLeads,
+  });
+
+  const { data: templates = [], refetch: refetchTemplates } = useQuery<
+    MessageTemplate[]
+  >({
+    queryKey: ["templates"],
+    queryFn: getLocalTemplates,
+  });
+
+  const { data: queueSize = 0, refetch: refetchQueue } = useQuery<number>({
+    queryKey: ["queueSize"],
+    queryFn: async () => {
+      const queue = await getQueuedOperations();
+      return queue.length;
+    },
+  });
+
+  const { data: profileName = "User Account", refetch: refetchProfile } =
+    useQuery<string>({
+      queryKey: ["profileName"],
+      queryFn: async () => {
+        const savedName = await getSecureItem("profile_name");
+        return savedName || "User Account";
+      },
+    });
+
+  const [syncing, setSyncing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Profile Modal State
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
+  const [tempProfileName, setTempProfileName] = useState("");
+
+  // Create Lead Form
   const [formData, setFormData] = useState<LeadCreateFormData>({
     name: "",
     value: "",
     email: "",
     phone: "",
-    status: "NEW"
+    status: "NEW",
   });
 
-  // Drawer / Modal Animation State
+  // Drawer Animation States
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [tempProfileName, setTempProfileName] = useState("");
-
   const slideAnim = useRef(new Animated.Value(600)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const loadData = async () => {
+  // Bulk Messaging States
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [bulkTemplateModalVisible, setBulkTemplateModalVisible] =
+    useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [customBulkBody, setCustomBulkBody] = useState("");
+  const [bulkChannel, setBulkChannel] = useState<"whatsapp" | "sms">(
+    "whatsapp",
+  );
+  const [bulkWizardVisible, setBulkWizardVisible] = useState(false);
+  const [currentBulkIndex, setCurrentBulkIndex] = useState(0);
+
+  useEffect(() => {
+    if (templates.length > 0 && !selectedTemplateId) {
+      setSelectedTemplateId(templates[0].id);
+    }
+  }, [templates, selectedTemplateId]);
+
+  const invalidateAll = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["leads"] }),
+      queryClient.invalidateQueries({ queryKey: ["templates"] }),
+      queryClient.invalidateQueries({ queryKey: ["queueSize"] }),
+      queryClient.invalidateQueries({ queryKey: ["profileName"] }),
+    ]);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchLeads(),
+      refetchTemplates(),
+      refetchQueue(),
+      refetchProfile(),
+    ]);
+    setRefreshing(false);
+  };
+
+  const handleImportDeviceContacts = async () => {
     try {
-      const localLeads = await getLocalLeads();
-      setLeads(localLeads);
-      const queue = await getQueuedOperations();
-      setQueueCount(queue.length);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+      showCustomAlert("Syncing Contacts", "Checking permissions...", "info");
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== "granted") {
+        showCustomAlert(
+          "Permission Denied",
+          "AutoReach needs contacts permission to sync phone numbers.",
+          "error",
+        );
+        return;
+      }
+
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.Emails, Contacts.Fields.PhoneNumbers],
+      });
+
+      if (!data || data.length === 0) {
+        showCustomAlert(
+          "No Contacts Found",
+          "No contacts fetched from your device.",
+          "info",
+        );
+        return;
+      }
+
+      // Load current leads to check for duplicates
+      const currentLeads = await getLocalLeads();
+      const existingPhones = new Set(
+        currentLeads
+          .map((l) => l.phone?.replace(/[^0-9]/g, ""))
+          .filter(Boolean),
+      );
+      const existingNames = new Set(
+        currentLeads.map((l) => l.name.toLowerCase().trim()),
+      );
+
+      let importCount = 0;
+      for (const contact of data) {
+        const name =
+          contact.name ||
+          [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+        if (!name) continue;
+
+        const phone = contact.phoneNumbers?.[0]?.number || null;
+        const email = contact.emails?.[0]?.email || null;
+
+        // Skip if no phone number
+        if (!phone) continue;
+
+        const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+        // Deduplicate
+        if (
+          existingPhones.has(cleanPhone) ||
+          existingNames.has(name.toLowerCase().trim())
+        ) {
+          continue;
+        }
+
+        const newLead: Lead = {
+          id: `contact_${contact.id || Math.random().toString(36).substring(2, 10)}`,
+          userId: "u_dev_user",
+          name: name,
+          email: email,
+          phone: phone,
+          status: "NEW",
+          value: 0,
+          notes: "Imported from device contacts.",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        await createLocalLead(newLead);
+        importCount++;
+      }
+
+      await invalidateAll();
+      showCustomAlert(
+        "Sync Completed",
+        `Successfully imported ${importCount} new contacts from your device!`,
+        "success",
+      );
+    } catch (err: any) {
+      console.warn("Contact import error", err);
+      showCustomAlert(
+        "Import Error",
+        err.message || "Could not fetch device contacts.",
+        "error",
+      );
     }
   };
 
-  useEffect(() => {
-    loadData();
-    async function loadProfile() {
-      const saved = await SecureStore.getItemAsync("profile_name");
-      if (saved) {
-        setProfileName(saved);
-        setTempProfileName(saved);
-      } else {
-        setTempProfileName("Shubham");
-      }
+  const handleBulkSendNext = async () => {
+    const selectedLeads = leads.filter((l) => selectedLeadIds.includes(l.id));
+    if (currentBulkIndex >= selectedLeads.length) {
+      setBulkWizardVisible(false);
+      setIsBulkMode(false);
+      setSelectedLeadIds([]);
+      showCustomAlert(
+        "Campaign Completed",
+        "Sequential messaging dispatch finished.",
+        "success",
+      );
+      return;
     }
-    loadProfile();
-  }, []);
+
+    const lead = selectedLeads[currentBulkIndex];
+    if (!lead.phone) {
+      setCurrentBulkIndex((prev) => prev + 1);
+      return;
+    }
+
+    let messageText = customBulkBody;
+    if (selectedTemplateId) {
+      const activeTemplate = templates.find((t) => t.id === selectedTemplateId);
+      if (activeTemplate) messageText = activeTemplate.body;
+    }
+
+    const personalizedMsg = messageText
+      .replace(/\[Name\]/gi, lead.name)
+      .replace(/\[Value\]/gi, lead.value.toLocaleString());
+
+    const encodedText = encodeURIComponent(personalizedMsg);
+    let url = "";
+    if (bulkChannel === "whatsapp") {
+      const cleanPhone = lead.phone.replace(/[^0-9]/g, "");
+      url = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    } else {
+      const separator = Platform.OS === "ios" ? "&" : "?";
+      url = `sms:${lead.phone}${separator}body=${encodedText}`;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        await logSentMessage(bulkChannel, lead.phone, "BULK_DIRECT_OPEN");
+      }
+    } catch (err) {
+      console.warn("Linking open error", err);
+    }
+
+    setCurrentBulkIndex((prev) => prev + 1);
+  };
+
+  const handleBulkSkip = () => {
+    setCurrentBulkIndex((prev) => prev + 1);
+  };
 
   const openDrawer = () => {
     setDrawerVisible(true);
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 400,
-        easing: Easing.out(Easing.back(1.2)),
+        duration: 300,
+        easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
-        toValue: 0.5,
+        toValue: 1,
         duration: 300,
         useNativeDriver: true,
-      })
+      }),
     ]).start();
   };
 
@@ -117,7 +361,7 @@ export default function LeadsScreen() {
         toValue: 0,
         duration: 250,
         useNativeDriver: true,
-      })
+      }),
     ]).start(() => {
       setDrawerVisible(false);
     });
@@ -125,35 +369,40 @@ export default function LeadsScreen() {
 
   const handleCreateLead = async () => {
     if (!formData.name.trim()) {
-      Alert.alert("Error", "Please fill in contact name");
+      showCustomAlert("Error", "Please fill in contact name", "error");
       return;
     }
 
     const newLead: Lead = {
       id: `lead_${Math.random().toString(36).substring(2, 10)}`,
       userId: "u_dev_user",
-      name: formData.name,
-      email: formData.email.trim() || `${formData.name.toLowerCase().replace(/\s+/g, "")}@example.com`,
+      name: formData.name.trim(),
+      email:
+        formData.email.trim() ||
+        `${formData.name.toLowerCase().replace(/\s+/g, "")}@example.com`,
       phone: formData.phone.trim() || "+1555019000",
       status: formData.status,
       value: parseInt(formData.value) || 0,
       notes: "Registered locally.",
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
-    setLoading(true);
     await createLocalLead(newLead);
     setFormData({
       name: "",
       value: "",
       email: "",
       phone: "",
-      status: "NEW"
+      status: "NEW",
     });
     closeDrawer();
-    await loadData();
-    Alert.alert("Contact Created", "Saved locally. Sync queued.");
+    await invalidateAll();
+    showCustomAlert(
+      "Contact Created",
+      "Saved locally. Sync queued.",
+      "success",
+    );
   };
 
   const handleSync = async () => {
@@ -161,286 +410,1128 @@ export default function LeadsScreen() {
     const result = await executeSyncCycle();
     setSyncing(false);
     if (result.success) {
-      Alert.alert("Sync Successful", `Synced ${result.syncedCount} modifications.`);
+      showCustomAlert(
+        "Sync Successful",
+        `Synced ${result.syncedCount} modifications.`,
+        "success",
+      );
+      await triggerLocalNotification(
+        "AutoReach Sync Completed",
+        `Successfully synced ${result.syncedCount} offline modifications.`,
+      );
     } else {
-      Alert.alert("Sync Failed", "Check your backend connection.");
+      showCustomAlert("Sync Failed", "Check your backend connection.", "error");
     }
-    await loadData();
+    await invalidateAll();
   };
 
   const handleSaveProfile = async () => {
     if (!tempProfileName.trim()) return;
-    setProfileName(tempProfileName);
-    await SecureStore.setItemAsync("profile_name", tempProfileName);
+    await saveSecureItem("profile_name", tempProfileName.trim());
+    await invalidateAll();
     setProfileModalVisible(false);
   };
 
+  const filteredLeads = leads.filter((lead) => {
+    const matchesSearch =
+      lead.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      (lead.email &&
+        lead.email.toLowerCase().includes(debouncedSearch.toLowerCase())) ||
+      (lead.phone && lead.phone.includes(debouncedSearch));
+
+    const matchesStage =
+      activeStageFilter === "ALL" || lead.status === activeStageFilter;
+
+    return matchesSearch && matchesStage;
+  });
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* 1. Header with Profile, Theme toggle, and Sync status */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border, paddingTop: insets.top }]}>
-        <Pressable onPress={() => setProfileModalVisible(true)} style={styles.profileBtn}>
-          <View style={[styles.avatar, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D` }]}>
-            <Text style={[styles.avatarText, { color: colors.primary }]}>
-              {profileName.substring(0, 2).toUpperCase()}
-            </Text>
-          </View>
-          <View>
-            <Text style={[styles.profileLabel, { color: colors.textSecondary }]}>User Account</Text>
-            <Text style={[styles.profileValue, { color: colors.text }]}>{profileName}</Text>
-          </View>
-        </Pressable>
-
-        <View style={styles.headerRight}>
-          {/* Sync Badge */}
+    <Host style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable
-            onPress={handleSync}
-            disabled={syncing}
-            style={[styles.syncBadge, { backgroundColor: `${colors.primary}0D`, borderColor: `${colors.primary}33` }]}
+            onPress={() => {
+              setTempProfileName(profileName);
+              setProfileModalVisible(true);
+            }}
+            style={styles.profileBtn}
           >
-            <Ionicons name="cloud-upload-outline" size={14} color={colors.primary} />
-            <Text style={[styles.syncText, { color: colors.primary }]}>
-              {syncing ? "..." : `${queueCount}`}
-            </Text>
-          </Pressable>
-
-          {/* Theme Toggle */}
-          <Pressable
-            onPress={toggleTheme}
-            style={[styles.themeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Ionicons
-              name={theme === "dark" ? "sunny-outline" : "moon-outline"}
-              size={18}
-              color={colors.text}
-            />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Leads List Scroll view */}
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Sync Warn banner */}
-        {queueCount > 0 && (
-          <View style={[styles.warnBanner, { backgroundColor: `${colors.warning}1A`, borderColor: `${colors.warning}33` }]}>
-            <View style={styles.warnBannerLeft}>
-              <Ionicons name="warning-outline" size={16} color={colors.warning} />
-              <Text style={[styles.warnText, { color: colors.warning }]}>{queueCount} updates waiting to sync</Text>
+            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarText}>
+                {profileName.charAt(0).toUpperCase()}
+              </Text>
             </View>
-            <Pressable onPress={handleSync}>
-              <Text style={[styles.warnLink, { color: colors.warning }]}>Sync</Text>
+            <View>
+              <Text
+                style={{ fontSize: 14, fontWeight: "bold", color: colors.text }}
+              >
+                {profileName}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.textSecondary }}>
+                System Agent
+              </Text>
+            </View>
+          </Pressable>
+
+          <View style={{ flex: 1 }} />
+
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable
+              onPress={handleImportDeviceContacts}
+              style={styles.iconBtn}
+              accessibilityLabel="Sync Device Contacts"
+            >
+              <Ionicons
+                name="people-outline"
+                size={20}
+                color={colors.primary}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setIsBulkMode(!isBulkMode);
+                setSelectedLeadIds([]);
+              }}
+              style={[
+                styles.iconBtn,
+                isBulkMode && { backgroundColor: `${colors.primary}33` },
+              ]}
+              accessibilityLabel="Toggle Bulk Mode"
+            >
+              <Ionicons
+                name={isBulkMode ? "checkbox" : "checkbox-outline"}
+                size={20}
+                color={isBulkMode ? colors.accent : colors.primary}
+              />
+            </Pressable>
+            <Pressable
+              onPress={handleSync}
+              disabled={syncing}
+              style={[
+                styles.iconBtn,
+                {
+                  backgroundColor: syncing
+                    ? `${colors.primary}1A`
+                    : "transparent",
+                },
+              ]}
+            >
+              <Ionicons
+                name="sync"
+                size={20}
+                color={queueSize > 0 ? colors.warning : colors.primary}
+              />
+            </Pressable>
+            <Pressable onPress={toggleTheme} style={styles.iconBtn}>
+              <Ionicons
+                name={theme === "dark" ? "sunny-outline" : "moon-outline"}
+                size={20}
+                color={colors.primary}
+              />
             </Pressable>
           </View>
-        )}
-
-        <View style={styles.listHeader}>
-          <Text style={[styles.listTitle, { color: colors.text }]}>My Pipelines</Text>
-          <Text style={[styles.listSubtitle, { color: colors.textSecondary }]}>Tap a contact to view full details and AI audit</Text>
         </View>
 
-        {/* List of Contacts */}
-        <View style={styles.leadsList}>
-          {loading ? (
-            <>
-              <LeadCardSkeleton />
-              <LeadCardSkeleton />
-              <LeadCardSkeleton />
-            </>
-          ) : leads.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={48} color={colors.textMuted} style={styles.emptyIcon} />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No contacts registered.</Text>
-              <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Tap the + button to add one.</Text>
-            </View>
-          ) : (
-            leads.map((lead) => (
+        {/* Search Bar */}
+        <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search leads by name, email or phone..."
+            placeholderTextColor={colors.textMuted}
+            style={glassInputStyle}
+          />
+        </View>
+
+        {/* Filter Stage Selector */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filtersScroll}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+        >
+          {(
+            ["ALL", "NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const
+          ).map((stage) => {
+            const isSelected = activeStageFilter === stage;
+            return (
               <Pressable
-                key={lead.id}
-                onPress={() => router.push(`/contact/${lead.id}`)}
-                style={[glassStyle, styles.leadCard]}
+                key={stage}
+                onPress={() => setActiveStageFilter(stage)}
+                style={[
+                  styles.filterBtn,
+                  isSelected
+                    ? { backgroundColor: colors.primary }
+                    : {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                      },
+                ]}
               >
-                <View style={styles.leadCardLeft}>
-                  <Text style={[styles.leadName, { color: colors.text }]}>{lead.name}</Text>
-                  <View style={styles.leadMeta}>
-                    <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}1A` }]}>
-                      <Text style={[styles.statusBadgeText, { color: colors.primary }]}>
-                        {lead.status}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "600",
+                    color: isSelected ? "#FFFFFF" : colors.textSecondary,
+                  }}
+                >
+                  {stage}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Lead List Cards */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.leadsListContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          {leadsLoading && leads.length === 0 ? (
+            <View style={{ gap: 12 }}>
+              <LeadCardSkeleton />
+              <LeadCardSkeleton />
+              <LeadCardSkeleton />
+            </View>
+          ) : filteredLeads.length === 0 ? (
+            <Text
+              style={{
+                textAlign: "center",
+                color: colors.textMuted,
+                marginTop: 40,
+                fontStyle: "italic",
+              }}
+            >
+              No contacts found.
+            </Text>
+          ) : (
+            filteredLeads.map((lead) => {
+              const isSelected = selectedLeadIds.includes(lead.id);
+              return (
+                <Pressable
+                  key={lead.id}
+                  onPress={() => {
+                    if (isBulkMode) {
+                      setSelectedLeadIds((prev) =>
+                        prev.includes(lead.id)
+                          ? prev.filter((id) => id !== lead.id)
+                          : [...prev, lead.id],
+                      );
+                    } else {
+                      router.push(`/contact/${lead.id}`);
+                    }
+                  }}
+                  style={[
+                    glassStyle,
+                    styles.leadCard,
+                    { backgroundColor: colors.surface },
+                    isBulkMode &&
+                      isSelected && {
+                        borderColor: colors.primary,
+                        borderWidth: 1,
+                      },
+                  ]}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      width: "100%",
+                      alignItems: "center",
+                    }}
+                  >
+                    {isBulkMode && (
+                      <View style={{ marginRight: 12 }}>
+                        <Ionicons
+                          name={isSelected ? "checkbox" : "square-outline"}
+                          size={24}
+                          color={isSelected ? colors.primary : colors.textMuted}
+                        />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          fontWeight: "bold",
+                          color: colors.text,
+                        }}
+                      >
+                        {lead.name}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                          marginTop: 2,
+                        }}
+                      >
+                        {lead.email || "No email"}
                       </Text>
                     </View>
-                    <Text style={[styles.leadPhone, { color: colors.textMuted }]}>{lead.phone}</Text>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: "bold",
+                          color: colors.primary,
+                        }}
+                      >
+                        ${lead.value.toLocaleString()}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              lead.status === "WON"
+                                ? `${colors.success}20`
+                                : lead.status === "LOST"
+                                  ? `${colors.danger}20`
+                                  : `${colors.primary}20`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 9,
+                            fontWeight: "bold",
+                            color:
+                              lead.status === "WON"
+                                ? colors.success
+                                : lead.status === "LOST"
+                                  ? colors.danger
+                                  : colors.primary,
+                          }}
+                        >
+                          {lead.status}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-
-                <View style={styles.leadCardRight}>
-                  <Text style={[styles.leadValue, { color: colors.primary }]}>${lead.value.toLocaleString()}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-                </View>
-              </Pressable>
-            ))
+                </Pressable>
+              );
+            })
           )}
-        </View>
-      </ScrollView>
+        </ScrollView>
 
-      {/* 2. Floating Action Button (FAB) */}
-      <View style={styles.fabContainer}>
+        {/* Floating Action Button */}
         <Pressable
           onPress={openDrawer}
           style={[styles.fab, { backgroundColor: colors.primary }]}
         >
           <Ionicons name="add" size={28} color="#FFFFFF" />
         </Pressable>
-      </View>
 
-      {/* 3. Slide-up Form Drawer Modal */}
-      {drawerVisible && (
-        <Modal transparent visible={drawerVisible} animationType="none">
-          <View style={styles.drawerBackdropContainer}>
-            {/* Backdrop */}
-            <Pressable
-              onPress={closeDrawer}
-              style={StyleSheet.absoluteFill}
-            >
-              <Animated.View style={[styles.drawerBackdrop, { opacity: fadeAnim }]} />
-            </Pressable>
+        {/* Create Contact Drawer Modal */}
+        {drawerVisible && (
+          <Modal transparent visible={drawerVisible} animationType="none">
+            <View style={styles.drawerOverlay}>
+              <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill}>
+                <Animated.View
+                  style={[styles.drawerBackdrop, { opacity: fadeAnim }]}
+                />
+              </Pressable>
 
-            {/* Slide up content */}
-            <Animated.View
-              style={[
-                styles.drawerContent,
-                {
-                  transform: [{ translateY: slideAnim }],
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                },
-              ]}
+              <Animated.View
+                style={[
+                  styles.drawerContent,
+                  {
+                    transform: [{ translateY: slideAnim }],
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+                  <View style={styles.drawerHeader}>
+                    <Text
+                      style={{
+                        fontSize: 18,
+                        fontWeight: "bold",
+                        color: colors.text,
+                      }}
+                    >
+                      Create New Contact
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <Pressable onPress={closeDrawer} style={styles.iconBtn}>
+                      <Ionicons name="close" size={24} color={colors.text} />
+                    </Pressable>
+                  </View>
+
+                  <TextInput
+                    value={formData.name}
+                    onChangeText={(val) =>
+                      setFormData((prev) => ({ ...prev, name: val }))
+                    }
+                    placeholder="Full Name / Company"
+                    placeholderTextColor={colors.textMuted}
+                    style={[glassInputStyle, styles.drawerInput]}
+                  />
+
+                  <TextInput
+                    value={formData.value}
+                    onChangeText={(val) =>
+                      setFormData((prev) => ({ ...prev, value: val }))
+                    }
+                    placeholder="Valuation ($)"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    style={[glassInputStyle, styles.drawerInput]}
+                  />
+
+                  <View style={styles.statusSelectContainer}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "600",
+                        color: colors.textSecondary,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Status
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {(
+                        [
+                          "NEW",
+                          "CONTACTED",
+                          "QUALIFIED",
+                          "LOST",
+                          "WON",
+                        ] as const
+                      ).map((opt) => {
+                        const isSel = formData.status === opt;
+                        return (
+                          <Pressable
+                            key={opt}
+                            onPress={() =>
+                              setFormData((prev) => ({ ...prev, status: opt }))
+                            }
+                            style={[
+                              styles.statusPill,
+                              isSel
+                                ? { backgroundColor: colors.primary }
+                                : {
+                                    backgroundColor: colors.bg,
+                                    borderColor: colors.border,
+                                    borderWidth: 1,
+                                  },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                color: isSel ? "#FFFFFF" : colors.textSecondary,
+                              }}
+                            >
+                              {opt}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  <TextInput
+                    value={formData.email}
+                    onChangeText={(val) =>
+                      setFormData((prev) => ({ ...prev, email: val }))
+                    }
+                    placeholder="Email Address"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="email-address"
+                    style={[glassInputStyle, styles.drawerInput]}
+                  />
+
+                  <TextInput
+                    value={formData.phone}
+                    onChangeText={(val) =>
+                      setFormData((prev) => ({ ...prev, phone: val }))
+                    }
+                    placeholder="Phone Number"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="phone-pad"
+                    style={[glassInputStyle, styles.drawerInput]}
+                  />
+
+                  <Pressable
+                    onPress={handleCreateLead}
+                    style={[
+                      styles.saveBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: "#FFFFFF",
+                        fontWeight: "bold",
+                        fontSize: 14,
+                      }}
+                    >
+                      Save Contact
+                    </Text>
+                  </Pressable>
+                </View>
+              </Animated.View>
+            </View>
+          </Modal>
+        )}
+
+        {/* Profile Edit Modal */}
+        {profileModalVisible && (
+          <Modal
+            transparent
+            visible={profileModalVisible}
+            animationType="slide"
+          >
+            <View style={styles.modalOverlay}>
+              <View
+                style={[
+                  styles.modalCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: "bold",
+                    color: colors.text,
+                    marginBottom: 4,
+                  }}
+                >
+                  Edit Account Profile
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginBottom: 16,
+                  }}
+                >
+                  Set your display name inside the top bar.
+                </Text>
+
+                <TextInput
+                  value={tempProfileName}
+                  onChangeText={setTempProfileName}
+                  placeholder="Profile Name"
+                  placeholderTextColor={colors.textMuted}
+                  style={[glassInputStyle, { height: 44, marginBottom: 16 }]}
+                />
+
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <Pressable
+                    onPress={() => setProfileModalVisible(false)}
+                    style={[
+                      styles.modalCancelBtn,
+                      {
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        backgroundColor: "transparent",
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: colors.text, fontWeight: "bold" }}>
+                      Cancel
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleSaveProfile}
+                    style={[
+                      styles.modalSaveBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontWeight: "bold" }}>
+                      Save
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* Bulk Selection Actions Panel */}
+        {isBulkMode && (
+          <View
+            style={[
+              glassStyle,
+              styles.bulkActionBar,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 10,
+              }}
             >
-              <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
-                <View style={styles.drawerHeader}>
-                  <Text style={[styles.drawerTitle, { color: colors.text }]}>Create New Contact</Text>
-                  <Pressable onPress={closeDrawer} style={styles.closeBtn}>
+              <Text
+                style={{ fontSize: 13, fontWeight: "bold", color: colors.text }}
+              >
+                {selectedLeadIds.length} leads selected
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (selectedLeadIds.length === filteredLeads.length) {
+                    setSelectedLeadIds([]);
+                  } else {
+                    setSelectedLeadIds(filteredLeads.map((l) => l.id));
+                  }
+                }}
+                style={styles.bulkTextBtn}
+              >
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontSize: 11,
+                    fontWeight: "600",
+                  }}
+                >
+                  {selectedLeadIds.length === filteredLeads.length
+                    ? "Deselect All"
+                    : "Select All"}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Pressable
+                onPress={() => {
+                  if (selectedLeadIds.length === 0) {
+                    showCustomAlert(
+                      "No Selection",
+                      "Please select at least one contact.",
+                      "warning",
+                    );
+                    return;
+                  }
+                  setBulkChannel("whatsapp");
+                  setBulkTemplateModalVisible(true);
+                }}
+                style={[
+                  styles.bulkActionBtn,
+                  { backgroundColor: colors.success },
+                ]}
+              >
+                <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
+                <Text style={styles.bulkActionBtnText}>WhatsApp Selected</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (selectedLeadIds.length === 0) {
+                    showCustomAlert(
+                      "No Selection",
+                      "Please select at least one contact.",
+                      "warning",
+                    );
+                    return;
+                  }
+                  setBulkChannel("sms");
+                  setBulkTemplateModalVisible(true);
+                }}
+                style={[
+                  styles.bulkActionBtn,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.bulkActionBtnText}>SMS Selected</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Bulk Template Select Modal */}
+        {bulkTemplateModalVisible && (
+          <Modal
+            transparent
+            visible={bulkTemplateModalVisible}
+            animationType="slide"
+          >
+            <View style={styles.modalOverlay}>
+              <View
+                style={[
+                  styles.modalCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 18,
+                      fontWeight: "bold",
+                      color: colors.text,
+                    }}
+                  >
+                    Select Campaign Template
+                  </Text>
+                  <View style={{ flex: 1 }} />
+                  <Pressable
+                    onPress={() => setBulkTemplateModalVisible(false)}
+                    style={styles.iconBtn}
+                  >
                     <Ionicons name="close" size={24} color={colors.text} />
                   </Pressable>
                 </View>
 
-                <TextInput
-                  placeholder="Full Name / Company"
-                  placeholderTextColor={colors.textMuted}
-                  value={formData.name}
-                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, name: text }))}
-                  style={[glassInputStyle, styles.drawerInput]}
-                />
-
-                <TextInput
-                  placeholder="Valuation ($)"
-                  placeholderTextColor={colors.textMuted}
-                  value={formData.value}
-                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, value: text }))}
-                  keyboardType="numeric"
-                  style={[glassInputStyle, styles.drawerInput]}
-                />
-
-                <View style={styles.statusSelectContainer}>
-                  <Text style={[styles.statusSelectLabel, { color: colors.textSecondary }]}>Status</Text>
-                  <View style={styles.statusPillsRow}>
-                    {(["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const).map((statusOption) => {
-                      const isSelected = formData.status === statusOption;
-                      let activeBg = colors.primary;
-                      if (statusOption === "WON") activeBg = colors.success;
-                      if (statusOption === "LOST") activeBg = colors.danger;
-                      if (statusOption === "QUALIFIED") activeBg = colors.primary;
-                      if (statusOption === "CONTACTED") activeBg = colors.accent;
-
-                      return (
-                        <Pressable
-                          key={statusOption}
-                          onPress={() => setFormData(prev => ({ ...prev, status: statusOption }))}
-                          style={[
-                            styles.statusPill,
-                            isSelected
-                              ? { backgroundColor: activeBg }
-                              : { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }
-                          ]}
+                {/* Templates Scroll list */}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginBottom: 8,
+                  }}
+                >
+                  Pre-configured Templates
+                </Text>
+                <ScrollView
+                  style={{ maxHeight: 180, marginBottom: 16 }}
+                  nestedScrollEnabled
+                >
+                  {templates.map((t) => {
+                    const isSel = selectedTemplateId === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => {
+                          setSelectedTemplateId(t.id);
+                          setCustomBulkBody(""); // Clear custom body if template selected
+                        }}
+                        style={[
+                          styles.templateSelectItem,
+                          {
+                            borderColor: colors.border,
+                            borderWidth: 1,
+                            padding: 10,
+                            borderRadius: 8,
+                            marginBottom: 8,
+                          },
+                          isSel && {
+                            backgroundColor: `${colors.primary}1A`,
+                            borderColor: colors.primary,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: "bold",
+                            color: isSel ? colors.primary : colors.text,
+                          }}
                         >
-                          <Text
-                            style={[
-                              styles.statusPillText,
-                              isSelected ? { color: "#FFFFFF", fontWeight: "bold" } : { color: colors.textSecondary }
-                            ]}
-                          >
-                            {statusOption}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
+                          {t.title}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: colors.textSecondary,
+                            marginTop: 4,
+                          }}
+                          numberOfLines={2}
+                        >
+                          {t.body}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
 
+                {/* Custom Body input */}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginBottom: 8,
+                  }}
+                >
+                  Or Write Custom Message
+                </Text>
                 <TextInput
-                  placeholder="Email Address"
+                  value={customBulkBody}
+                  onChangeText={(val) => {
+                    setCustomBulkBody(val);
+                    setSelectedTemplateId(""); // Clear selected template if writing custom body
+                  }}
+                  placeholder="Type message here. Use [Name] and [Value] to personalize."
                   placeholderTextColor={colors.textMuted}
-                  value={formData.email}
-                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, email: text }))}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  style={[glassInputStyle, styles.drawerInput]}
-                />
-
-                <TextInput
-                  placeholder="Phone Number (e.g. +1555123456)"
-                  placeholderTextColor={colors.textMuted}
-                  value={formData.phone}
-                  onChangeText={(text: string) => setFormData(prev => ({ ...prev, phone: text }))}
-                  keyboardType="phone-pad"
-                  style={[glassInputStyle, styles.drawerInput, styles.lastDrawerInput]}
+                  multiline
+                  style={[
+                    glassInputStyle,
+                    {
+                      height: 80,
+                      textAlignVertical: "top",
+                      marginBottom: 16,
+                      padding: 10,
+                    },
+                  ]}
                 />
 
                 <Pressable
-                  onPress={handleCreateLead}
+                  onPress={() => {
+                    const selectedLeadsCount = leads.filter((l) =>
+                      selectedLeadIds.includes(l.id),
+                    ).length;
+                    let hasText = customBulkBody.trim().length > 0;
+                    if (selectedTemplateId) {
+                      const temp = templates.find(
+                        (t) => t.id === selectedTemplateId,
+                      );
+                      if (temp) hasText = true;
+                    }
+                    if (!hasText) {
+                      showCustomAlert(
+                        "Empty Message",
+                        "Please select a template or write a custom message.",
+                        "warning",
+                      );
+                      return;
+                    }
+                    setBulkTemplateModalVisible(false);
+                    setCurrentBulkIndex(0);
+                    setBulkWizardVisible(true);
+                  }}
                   style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 >
-                  <Text style={styles.saveBtnText}>Save Contact</Text>
-                </Pressable>
-              </View>
-            </Animated.View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Profile Edit Modal */}
-      {profileModalVisible && (
-        <Modal transparent visible={profileModalVisible} animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Account Profile</Text>
-              <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Set your display name inside the top bar.</Text>
-
-              <TextInput
-                placeholder="Profile Name"
-                placeholderTextColor={colors.textMuted}
-                value={tempProfileName}
-                onChangeText={setTempProfileName}
-                style={[glassInputStyle, styles.modalInput]}
-              />
-
-              <View style={styles.modalActions}>
-                <Pressable
-                  onPress={() => setProfileModalVisible(false)}
-                  style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                >
-                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleSaveProfile}
-                  style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Text style={styles.modalSaveBtnText}>Save</Text>
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                      fontSize: 14,
+                    }}
+                  >
+                    Start Sequential Dispatch ({selectedLeadIds.length}{" "}
+                    recipients)
+                  </Text>
                 </Pressable>
               </View>
             </View>
-          </View>
-        </Modal>
-      )}
-    </View>
+          </Modal>
+        )}
+
+        {/* Bulk Sequential Send Wizard Modal */}
+        {bulkWizardVisible && (
+          <Modal transparent visible={bulkWizardVisible} animationType="fade">
+            <View style={styles.modalOverlay}>
+              <View
+                style={[
+                  styles.modalCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    padding: 24,
+                  },
+                ]}
+              >
+                {(() => {
+                  const selectedLeads = leads.filter((l) =>
+                    selectedLeadIds.includes(l.id),
+                  );
+                  const isDone = currentBulkIndex >= selectedLeads.length;
+
+                  if (isDone) {
+                    return (
+                      <View
+                        style={{ alignItems: "center", paddingVertical: 12 }}
+                      >
+                        <Ionicons
+                          name="checkmark-circle-outline"
+                          size={64}
+                          color={colors.success}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 18,
+                            fontWeight: "bold",
+                            color: colors.text,
+                            marginTop: 16,
+                          }}
+                        >
+                          Campaign Dispatched!
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            color: colors.textSecondary,
+                            textAlign: "center",
+                            marginTop: 8,
+                            marginBottom: 20,
+                          }}
+                        >
+                          All selected messages have been processed
+                          sequentially.
+                        </Text>
+                        <Pressable
+                          onPress={() => {
+                            setBulkWizardVisible(false);
+                            setIsBulkMode(false);
+                            setSelectedLeadIds([]);
+                          }}
+                          style={[
+                            styles.saveBtn,
+                            { backgroundColor: colors.primary, width: "100%" },
+                          ]}
+                        >
+                          <Text
+                            style={{ color: "#FFFFFF", fontWeight: "bold" }}
+                          >
+                            Finish
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  }
+
+                  const lead = selectedLeads[currentBulkIndex];
+                  let messageText = customBulkBody;
+                  if (selectedTemplateId) {
+                    const temp = templates.find(
+                      (t) => t.id === selectedTemplateId,
+                    );
+                    if (temp) messageText = temp.body;
+                  }
+                  const personalizedMsg = messageText
+                    .replace(/\[Name\]/gi, lead.name)
+                    .replace(/\[Value\]/gi, lead.value.toLocaleString());
+
+                  return (
+                    <View>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          marginBottom: 16,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 16,
+                            fontWeight: "bold",
+                            color: colors.text,
+                          }}
+                        >
+                          Outreach Wizard ({bulkChannel.toUpperCase()})
+                        </Text>
+                        <View style={{ flex: 1 }} />
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "bold",
+                            color: colors.primary,
+                          }}
+                        >
+                          {currentBulkIndex + 1} / {selectedLeads.length}
+                        </Text>
+                      </View>
+
+                      {/* Progress Bar */}
+                      <View
+                        style={{
+                          height: 6,
+                          backgroundColor: colors.border,
+                          borderRadius: 3,
+                          marginBottom: 20,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <View
+                          style={{
+                            height: "100%",
+                            backgroundColor: colors.primary,
+                            width: `${((currentBulkIndex + 1) / selectedLeads.length) * 100}%`,
+                          }}
+                        />
+                      </View>
+
+                      {/* Recipient Card */}
+                      <View
+                        style={{
+                          padding: 12,
+                          backgroundColor: colors.bg,
+                          borderRadius: 10,
+                          borderColor: colors.border,
+                          borderWidth: 1,
+                          marginBottom: 16,
+                        }}
+                      >
+                        <Text
+                          style={{ fontSize: 12, color: colors.textSecondary }}
+                        >
+                          Recipient Name
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 15,
+                            fontWeight: "bold",
+                            color: colors.text,
+                            marginTop: 2,
+                          }}
+                        >
+                          {lead.name}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: colors.textSecondary,
+                            marginTop: 8,
+                          }}
+                        >
+                          Phone Number
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            color: colors.text,
+                            marginTop: 2,
+                          }}
+                        >
+                          {lead.phone || "No phone number available"}
+                        </Text>
+                      </View>
+
+                      {/* Message Preview */}
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Message Preview
+                      </Text>
+                      <ScrollView
+                        style={{
+                          height: 100,
+                          padding: 10,
+                          backgroundColor: colors.bg,
+                          borderRadius: 10,
+                          borderColor: colors.border,
+                          borderWidth: 1,
+                          marginBottom: 20,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            color: colors.text,
+                            fontStyle: "italic",
+                          }}
+                        >
+                          {personalizedMsg}
+                        </Text>
+                      </ScrollView>
+
+                      {/* Actions */}
+                      <View style={{ gap: 12 }}>
+                        <Pressable
+                          onPress={handleBulkSendNext}
+                          style={[
+                            styles.saveBtn,
+                            {
+                              backgroundColor: colors.primary,
+                              flexDirection: "row",
+                              gap: 8,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="paper-plane"
+                            size={16}
+                            color="#FFFFFF"
+                          />
+                          <Text
+                            style={{ color: "#FFFFFF", fontWeight: "bold" }}
+                          >
+                            Launch Intent & Next
+                          </Text>
+                        </Pressable>
+
+                        <View style={{ flexDirection: "row", gap: 12 }}>
+                          <Pressable
+                            onPress={handleBulkSkip}
+                            style={[
+                              styles.modalCancelBtn,
+                              { borderColor: colors.border, borderWidth: 1 },
+                            ]}
+                          >
+                            <Text
+                              style={{ color: colors.text, fontWeight: "bold" }}
+                            >
+                              Skip Lead
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              setBulkWizardVisible(false);
+                            }}
+                            style={[
+                              styles.modalCancelBtn,
+                              { borderColor: colors.danger, borderWidth: 1 },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                color: colors.danger,
+                                fontWeight: "bold",
+                              }}
+                            >
+                              Abort Batch
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* Custom Alerts */}
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          buttons={alertConfig.buttons}
+          onClose={() =>
+            setAlertConfig((prev) => ({ ...prev, visible: false }))
+          }
+        />
+      </View>
+    </Host>
   );
 }
 
@@ -452,9 +1543,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    borderBottomWidth: 1,
   },
   profileBtn: {
     flexDirection: "row",
@@ -462,244 +1551,109 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
   },
   avatarText: {
+    color: "#FFFFFF",
     fontWeight: "bold",
-    fontSize: 14,
-  },
-  profileLabel: {
-    fontSize: 9,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    fontWeight: "600",
-  },
-  profileValue: {
     fontSize: 16,
-    fontWeight: "bold",
   },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  syncBadge: {
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  syncText: {
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  themeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
+  iconBtn: {
+    padding: 8,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
-  scrollContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  warnBanner: {
-    borderWidth: 1,
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  warnBannerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  warnText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  warnLink: {
-    fontSize: 12,
-    fontWeight: "bold",
-    textDecorationLine: "underline",
-  },
-  listHeader: {
-    marginBottom: 16,
-  },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  listSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  leadsList: {
-    gap: 12,
-  },
-  emptyContainer: {
-    paddingVertical: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyIcon: {
+  filtersScroll: {
+    maxHeight: 44,
     marginBottom: 8,
   },
-  emptyText: {
-    fontSize: 14,
-    fontStyle: "italic",
+  filterBtn: {
+    paddingHorizontal: 16,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  emptySubtext: {
-    fontSize: 12,
-    marginTop: 4,
+  leadsListContainer: {
+    padding: 16,
+    gap: 12,
+    paddingBottom: 100,
   },
   leadCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     padding: 16,
-  },
-  leadCardLeft: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  leadName: {
-    fontWeight: "bold",
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  leadMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    width: "100%",
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-  },
-  statusBadgeText: {
-    fontSize: 9,
-    fontWeight: "bold",
-  },
-  leadPhone: {
-    fontSize: 11,
-  },
-  leadCardRight: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  leadValue: {
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-  fabContainer: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
+    marginTop: 4,
   },
   fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 90,
     width: 56,
     height: 56,
     borderRadius: 28,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
     elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
-  drawerBackdropContainer: {
+  drawerOverlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
   drawerBackdrop: {
-    flex: 1,
-    backgroundColor: "#000",
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   drawerContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderTopWidth: 1,
     padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 16,
+    borderWidth: 1,
   },
   drawerHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
   },
-  drawerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  closeBtn: {
-    padding: 4,
-  },
   drawerInput: {
+    height: 44,
     marginBottom: 12,
-  },
-  lastDrawerInput: {
-    marginBottom: 20,
   },
   statusSelectContainer: {
-    marginBottom: 12,
-  },
-  statusSelectLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 6,
-    paddingLeft: 4,
-  },
-  statusPillsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    marginBottom: 16,
   },
   statusPill: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  statusPillText: {
-    fontSize: 11,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   saveBtn: {
-    borderRadius: 12,
-    paddingVertical: 14,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  saveBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "bold",
-    fontSize: 15,
+    marginTop: 16,
   },
   modalOverlay: {
     flex: 1,
@@ -714,42 +1668,57 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: "100%",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  modalSubtitle: {
-    fontSize: 12,
-    marginBottom: 16,
-  },
-  modalInput: {
-    marginBottom: 16,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
   modalCancelBtn: {
     flex: 1,
+    height: 40,
     borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 12,
+    justifyContent: "center",
     alignItems: "center",
-  },
-  modalCancelBtnText: {
-    fontWeight: "bold",
-    fontSize: 14,
   },
   modalSaveBtn: {
     flex: 1,
+    height: 40,
     borderRadius: 12,
-    paddingVertical: 12,
+    justifyContent: "center",
     alignItems: "center",
   },
-  modalSaveBtnText: {
+  bulkActionBar: {
+    position: "absolute",
+    bottom: 88,
+    left: 16,
+    right: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    zIndex: 999,
+  },
+  bulkActionBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  bulkActionBtnText: {
     color: "#FFFFFF",
+    fontSize: 12,
     fontWeight: "bold",
-    fontSize: 14,
+  },
+  bulkTextBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  templateSelectItem: {
+    borderWidth: 1,
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
   },
 });

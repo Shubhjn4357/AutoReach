@@ -15,4 +15,3 @@
 
 - AI service calls should implement retry logic (max 3 attempts).
 - Fallback mock/rule-based heuristics must be available to prevent client crashes and allow offline/local development without LLM API keys.
-

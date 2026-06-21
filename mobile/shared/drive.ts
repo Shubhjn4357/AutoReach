@@ -12,7 +12,7 @@ export async function uploadToGoogleDrive(
   accessToken: string,
   fileName: string,
   mimeType: string,
-  fileContent: Buffer | string
+  fileContent: Buffer | string,
 ): Promise<DriveUploadResult> {
   if (accessToken === "mock_token") {
     const mockFileId = `drive_file_${Math.random().toString(36).substring(2, 11)}`;
@@ -21,8 +21,11 @@ export async function uploadToGoogleDrive(
       fileId: mockFileId,
       name: fileName,
       mimeType,
-      size: typeof fileContent === "string" ? fileContent.length : fileContent.byteLength,
-      webViewLink: `https://drive.google.com/open?id=${mockFileId}`
+      size:
+        typeof fileContent === "string"
+          ? fileContent.length
+          : fileContent.byteLength,
+      webViewLink: `https://drive.google.com/open?id=${mockFileId}`,
     };
   }
 
@@ -32,13 +35,15 @@ export async function uploadToGoogleDrive(
     const delimiter = `\r\n--${boundary}\r\n`;
     const closeDelimiter = `\r\n--${boundary}--\r\n`;
 
-    const multipartBody = 
+    const multipartBody =
       delimiter +
-      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
       JSON.stringify(metadata) +
       delimiter +
       `Content-Type: ${mimeType}\r\n\r\n` +
-      (typeof fileContent === "string" ? fileContent : fileContent.toString("binary")) +
+      (typeof fileContent === "string"
+        ? fileContent
+        : fileContent.toString("binary")) +
       closeDelimiter;
 
     const response = await fetch(
@@ -46,22 +51,26 @@ export async function uploadToGoogleDrive(
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": `multipart/related; boundary=${boundary}`,
-          "Content-Length": multipartBody.length.toString()
+          "Content-Length": multipartBody.length.toString(),
         },
-        body: multipartBody
-      }
+        body: multipartBody,
+      },
     );
-    if (!response.ok) throw new Error(`Google API responded with status ${response.status}`);
+    if (!response.ok)
+      throw new Error(`Google API responded with status ${response.status}`);
     const data = await response.json();
     return {
       success: true,
       fileId: data.id,
       name: data.name || fileName,
       mimeType: data.mimeType || mimeType,
-      size: typeof fileContent === "string" ? fileContent.length : fileContent.byteLength,
-      webViewLink: `https://drive.google.com/open?id=${data.id}`
+      size:
+        typeof fileContent === "string"
+          ? fileContent.length
+          : fileContent.byteLength,
+      webViewLink: `https://drive.google.com/open?id=${data.id}`,
     };
   } catch (error: any) {
     console.error("Drive upload failed:", error);
@@ -71,7 +80,7 @@ export async function uploadToGoogleDrive(
       name: fileName,
       mimeType,
       size: 0,
-      error: error.message
+      error: error.message,
     };
   }
 }

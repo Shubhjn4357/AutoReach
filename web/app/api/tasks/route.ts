@@ -12,8 +12,11 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -21,8 +24,11 @@ export async function GET(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -33,9 +39,12 @@ export async function GET(req: NextRequest) {
         .from(tasks)
         .where(eq(tasks.userId, decoded.userId));
     } catch (dbError) {
-      console.error("SQLite query failed, falling back to in-memory store:", dbError);
+      console.error(
+        "SQLite query failed, falling back to in-memory store:",
+        dbError,
+      );
       userTasks = Array.from(tasksInMemoryDb.values()).filter(
-        (task) => task.userId === decoded.userId
+        (task) => task.userId === decoded.userId,
       );
     }
 
@@ -43,12 +52,15 @@ export async function GET(req: NextRequest) {
       success: true,
       data: userTasks,
       message: `Retrieved ${userTasks.length} tasks`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }
@@ -58,8 +70,11 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -67,8 +82,11 @@ export async function POST(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -77,14 +95,21 @@ export async function POST(req: NextRequest) {
 
     if (!title) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Title is required" } },
-        { status: 400 }
+        {
+          success: false,
+          error: { code: "BAD_REQUEST", message: "Title is required" },
+        },
+        { status: 400 },
       );
     }
 
     const newTaskId = `task_${Math.random().toString(36).substring(2, 11)}`;
     const nowTimestamp = Date.now();
-    const resolvedDueDate = dueDate ? (typeof dueDate === "number" ? dueDate : new Date(dueDate).getTime()) : null;
+    const resolvedDueDate = dueDate
+      ? typeof dueDate === "number"
+        ? dueDate
+        : new Date(dueDate).getTime()
+      : null;
 
     const newTask = {
       id: newTaskId,
@@ -94,7 +119,7 @@ export async function POST(req: NextRequest) {
       description: description || null,
       status: status || "PENDING",
       dueDate: resolvedDueDate,
-      createdAt: nowTimestamp
+      createdAt: nowTimestamp,
     };
 
     try {
@@ -106,13 +131,16 @@ export async function POST(req: NextRequest) {
         description: description || null,
         status: status || "PENDING",
         dueDate: resolvedDueDate,
-        createdAt: nowTimestamp
+        createdAt: nowTimestamp,
       });
     } catch (dbError) {
-      console.error("SQLite insert failed, saving to in-memory store:", dbError);
+      console.error(
+        "SQLite insert failed, saving to in-memory store:",
+        dbError,
+      );
       tasksInMemoryDb.set(newTaskId, {
         ...newTask,
-        createdAt: nowTimestamp
+        createdAt: nowTimestamp,
       });
     }
 
@@ -120,12 +148,15 @@ export async function POST(req: NextRequest) {
       success: true,
       data: newTask,
       message: "Task created successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

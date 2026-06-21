@@ -14,6 +14,7 @@ This repository contains the following components:
 ## Getting Started
 
 1. **Install Dependencies**:
+
    ```bash
    pnpm install
    ```
@@ -28,10 +29,10 @@ This repository contains the following components:
      pnpm mobile:start
      ```
 
-
 ## Development Standards
 
 Please refer to the `docs/` folder for comprehensive blueprints and specifications:
+
 - [00_PROJECT_VISION.md](docs/00_PROJECT_VISION.md) - Vision and Core Platform Purpose
 - [01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) - Technical Architecture Mapping
 - [02_TECH_STACK.md](docs/02_TECH_STACK.md) - Technologies list

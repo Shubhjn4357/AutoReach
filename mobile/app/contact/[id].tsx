@@ -1,13 +1,30 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Alert, ActivityIndicator, Modal, StyleSheet, View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  Pressable,
+  Platform,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { useTheme } from "../../services/theme";
-import { getDb, updateLocalLead, deleteLocalLead } from "../../services/db";
+import {
+  getDb,
+  updateLocalLead,
+  deleteLocalLead,
+  logSentMessage,
+} from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { recommendNextStep } from "../../shared/crm";
-import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
+import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { Host } from "@expo/ui";
 
 interface AiAuditResult {
   score: number;
@@ -33,7 +50,7 @@ interface RawSqlLead {
 // Throttle Custom Hook (Prevent rapid spam clicks)
 function useThrottle<Args extends unknown[], R>(
   callback: (...args: Args) => R,
-  delay = 1500
+  delay = 1500,
 ): (...args: Args) => void {
   const lastRun = useRef<number>(0);
   return (...args: Args) => {
@@ -45,29 +62,6 @@ function useThrottle<Args extends unknown[], R>(
   };
 }
 
-// Debounce Custom Hook (Used for live text updates)
-function useDebounce<T>(value: T, delay = 500): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-  return debouncedValue;
-}
-
-interface LeadFormData {
-  name: string;
-  value: string;
-  email: string;
-  phone: string;
-  status: LeadStatus;
-  notes: string;
-}
-
 export default function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -75,16 +69,16 @@ export default function ContactDetailScreen() {
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // Singular state structure for contact edit form
+
+  // Modal & Form States
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [formData, setFormData] = useState<LeadFormData>({
+  const [formData, setFormData] = useState({
     name: "",
     value: "",
     email: "",
     phone: "",
-    status: "NEW",
-    notes: ""
+    notes: "",
+    status: "NEW" as LeadStatus,
   });
 
   // AI CRM Agent State
@@ -92,13 +86,42 @@ export default function ContactDetailScreen() {
   const [aiResult, setAiResult] = useState<AiAuditResult | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Debounced notes character count calculation
-  const debouncedNotes = useDebounce(formData.notes, 300);
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: "info" | "success" | "warning" | "error";
+    buttons?: AlertButton[];
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
+  const showCustomAlert = (
+    title: string,
+    message: string,
+    type: "info" | "success" | "warning" | "error" = "info",
+    buttons?: AlertButton[],
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons,
+    });
+  };
 
   const loadLead = async () => {
     try {
       const db = await getDb();
-      const r = await db.getFirstAsync<RawSqlLead>("SELECT * FROM leads WHERE id = ?", [id]);
+      const r = await db.getFirstAsync<RawSqlLead>(
+        "SELECT * FROM leads WHERE id = ?",
+        [id],
+      );
       if (r) {
         const leadData: Lead = {
           id: r.id,
@@ -110,21 +133,23 @@ export default function ContactDetailScreen() {
           value: r.value,
           notes: r.notes,
           createdAt: r.created_at,
-          updatedAt: r.updated_at
+          updatedAt: r.updated_at,
         };
         setLead(leadData);
-        // Initialize form using singular structure
+
+        // Bind form values
         setFormData({
           name: leadData.name,
           value: leadData.value.toString(),
           email: leadData.email || "",
           phone: leadData.phone || "",
+          notes: leadData.notes || "",
           status: leadData.status,
-          notes: leadData.notes || ""
         });
       } else {
-        Alert.alert("Error", "Contact not found");
-        router.back();
+        showCustomAlert("Error", "Contact not found", "error", [
+          { text: "OK", onPress: () => router.back() },
+        ]);
       }
     } catch (e) {
       console.error("Failed to load contact details:", e);
@@ -138,404 +163,775 @@ export default function ContactDetailScreen() {
   }, [id]);
 
   const handleUpdate = async () => {
-    if (!formData.name.trim()) {
-      Alert.alert("Error", "Name is required");
+    const name = formData.name.trim();
+    if (!name) {
+      showCustomAlert("Error", "Name is required", "error");
       return;
     }
     if (!lead) return;
 
     const updated: Lead = {
       ...lead,
-      name: formData.name,
+      name,
       value: parseInt(formData.value) || 0,
-      email: formData.email,
-      phone: formData.phone,
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
       status: formData.status,
-      notes: formData.notes,
-      updatedAt: Date.now()
+      notes: formData.notes.trim(),
+      updatedAt: Date.now(),
     };
 
-    setLoading(true);
-    await updateLocalLead(updated);
-    setEditModalVisible(false);
-    await loadLead();
-    Alert.alert("Success", "Contact details updated.");
+    try {
+      await updateLocalLead(updated);
+      setEditModalVisible(false);
+      await loadLead();
+      showCustomAlert("Success", "Contact details updated.", "success");
+    } catch (err) {
+      showCustomAlert("Error", "Could not save details", "error");
+    }
   };
 
-  const handleDelete = () => {
-    Alert.alert(
+  const throttledUpdate = useThrottle(handleUpdate, 2000);
+
+  const handleDeleteLead = async () => {
+    if (!lead) return;
+    showCustomAlert(
       "Confirm Delete",
-      `Are you sure you want to delete ${lead?.name}?`,
+      `Are you sure you want to permanently delete "${lead.name}"?`,
+      "warning",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive", 
+        {
+          text: "Delete",
+          style: "destructive",
           onPress: async () => {
-            if (lead) {
+            try {
               await deleteLocalLead(lead.id);
-              Alert.alert("Deleted", "Contact removed locally.");
-              router.back();
+              showCustomAlert(
+                "Deleted",
+                "Contact removed successfully.",
+                "success",
+                [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
+              );
+            } catch (e) {
+              showCustomAlert("Error", "Failed to delete contact.", "error");
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
-  const runAiAudit = async () => {
+  const handleRunAiAudit = () => {
     if (!lead) return;
     setAiLoading(true);
-    setAiResult(null);
-    try {
-      const token = await SecureStore.getItemAsync("auth_token");
-      const backendUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
-      
-      const response = await fetch(`${backendUrl}/api/ai`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token || "mock_shubham_token"}`
-        },
-        body: JSON.stringify(lead)
-      });
+    setTimeout(() => {
+      try {
+        const action = recommendNextStep(lead);
+        let score = 50;
+        if (lead.status === "WON") score = 100;
+        else if (lead.status === "QUALIFIED") score = 80;
+        else if (lead.status === "CONTACTED") score = 65;
 
-      if (!response.ok) throw new Error("AI Endpoint failed");
-      const result = await response.json();
-      if (result.success) {
-        setAiResult(result.data as AiAuditResult);
-      } else {
-        throw new Error(result.error?.message || "Audit failed");
+        const grade = score >= 80 ? "A" : score >= 65 ? "B" : "C";
+        const summary = `Lead status is ${lead.status.toLowerCase()} with valuation $${lead.value.toLocaleString()}.`;
+        const proposedQuickReply = `Hi ${lead.name}, following up on our discussion!`;
+
+        setAiResult({
+          score,
+          grade,
+          summary,
+          suggestedAction: action,
+          proposedQuickReply,
+        });
+      } catch (err) {
+        console.warn("AI audit execution error", err);
+      } finally {
+        setAiLoading(false);
       }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn("AI endpoint unreachable, rendering offline fallback:", message);
-      // Offline fallback recommendation
-      setAiResult({
-        score: lead.value > 10000 ? 88 : 60,
-        grade: lead.value > 10000 ? "A" : "B",
-        summary: `Offline profile assessment. Lead "${lead.name}" valuation is $${lead.value.toLocaleString()}.`,
-        suggestedAction: recommendNextStep(lead),
-        proposedQuickReply: `Hi ${lead.name.split(" ")[0] || "there"}, following up on our chat. Let me know when you have 5 minutes to connect!`
-      });
-    } finally {
-      setAiLoading(false);
-    }
+    }, 1000);
   };
 
-  const sendMessage = async (channel: "whatsapp" | "sms", text: string) => {
-    if (!lead?.phone) {
-      Alert.alert("Error", "No phone number available.");
+  const handleSendMessage = async (
+    channel: "whatsapp" | "sms",
+    bodyText: string,
+  ) => {
+    if (!lead || !lead.phone) {
+      showCustomAlert("Invalid Contact", "Phone number is missing.", "warning");
       return;
     }
     setActionLoading(true);
-    try {
-      const token = await SecureStore.getItemAsync("auth_token");
-      const backendUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
-      
-      const response = await fetch(`${backendUrl}/api/${channel}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token || "mock_shubham_token"}`
-        },
-        body: JSON.stringify({ phone: lead.phone, text })
-      });
+    const encodedText = encodeURIComponent(bodyText);
+    let url = "";
 
-      if (!response.ok) throw new Error("Dispatch failed");
-      const result = await response.json();
-      if (result.success) {
-        Alert.alert("Success", `${channel.toUpperCase()} message sent successfully!`);
+    if (channel === "whatsapp") {
+      const cleanPhone = lead.phone.replace(/[^0-9]/g, "");
+      url = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+    } else {
+      const separator = Platform.OS === "ios" ? "&" : "?";
+      url = `sms:${lead.phone}${separator}body=${encodedText}`;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        await logSentMessage(channel, lead.phone, "DIRECT_OPEN");
+        showCustomAlert(
+          "Redirecting",
+          `Opening native ${channel.toUpperCase()} app. Logged stats.`,
+          "success",
+        );
       } else {
-        throw new Error(result.error?.message || "Dispatch failed");
+        showCustomAlert(
+          "Unsupported URL",
+          `Could not launch client app for ${channel.toUpperCase()}`,
+          "error",
+        );
       }
-    } catch (error: unknown) {
-      Alert.alert("Offline Message Queued", `Local connection offline. Message will be dispatched to ${lead.phone} when network resumes.`);
+    } catch (e: any) {
+      showCustomAlert(
+        "Linking Failed",
+        e.message || "An error occurred",
+        "error",
+      );
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Throttled actions
-  const throttledUpdate = useThrottle(handleUpdate);
-  const throttledDelete = useThrottle(handleDelete);
-  const throttledAudit = useThrottle(runAiAudit);
-  const throttledSendMessage = useThrottle(sendMessage);
+  const throttledSendMessage = useThrottle(handleSendMessage, 2000);
 
-  if (loading || !lead) {
+  if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <Host style={{ flex: 1 }}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ marginTop: 12, color: colors.textSecondary }}>
+            Loading contact details...
+          </Text>
+        </View>
+      </Host>
     );
   }
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Top Header Navigation Bar */}
-      <SafeAreaView edges={["top"]} style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-          <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Profile Details</Text>
-        <Pressable onPress={throttledDelete} style={styles.deleteHeaderBtn}>
-          <Ionicons name="trash-outline" size={20} color={colors.danger} />
-        </Pressable>
-      </SafeAreaView>
+  if (!lead) return null;
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Profile Card */}
-        <View style={[glassStyle, styles.profileCard]}>
-          <View style={styles.profileHeader}>
-            <View style={styles.profileHeaderLeft}>
-              <View style={[styles.avatar, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}33` }]}>
-                <Text style={[styles.avatarText, { color: colors.primary }]}>
-                  {lead.name.substring(0, 2).toUpperCase()}
+  return (
+    <Host style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={["bottom"]}
+        style={[styles.container, { backgroundColor: colors.bg }]}
+      >
+        {/* Custom Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={20} color={colors.primary} />
+            <Text
+              style={{ color: colors.primary, fontWeight: "600", fontSize: 14 }}
+            >
+              Back
+            </Text>
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <Pressable onPress={handleDeleteLead} style={styles.deleteHeaderBtn}>
+            <Ionicons name="trash-outline" size={20} color={colors.danger} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          {/* Profile Card */}
+          <View
+            style={[
+              glassStyle,
+              styles.profileCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <View style={styles.profileHeader}>
+              <View style={styles.profileHeaderLeft}>
+                <View
+                  style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: `${colors.primary}20`,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontWeight: "bold",
+                      fontSize: 18,
+                    }}
+                  >
+                    {lead.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={[styles.leadName, { color: colors.text }]}>
+                    {lead.name}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    ID: {lead.id}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flex: 1 }} />
+              <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor:
+                      lead.status === "WON"
+                        ? `${colors.success}1A`
+                        : lead.status === "LOST"
+                          ? `${colors.danger}1A`
+                          : `${colors.primary}1A`,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "bold",
+                    color:
+                      lead.status === "WON"
+                        ? colors.success
+                        : lead.status === "LOST"
+                          ? colors.danger
+                          : colors.primary,
+                  }}
+                >
+                  {lead.status}
                 </Text>
               </View>
-              <View>
-                <Text style={[styles.leadName, { color: colors.text }]}>{lead.name}</Text>
-                <Text style={[styles.leadId, { color: colors.textMuted }]}>ID: {lead.id}</Text>
+            </View>
+
+            <View
+              style={[
+                styles.detailsBox,
+                { borderColor: colors.border, backgroundColor: colors.bg },
+              ]}
+            >
+              <View style={styles.detailRow}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  Deal Value
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "bold",
+                    color: colors.primary,
+                  }}
+                >
+                  ${lead.value.toLocaleString()}
+                </Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  Email
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Text style={{ fontSize: 12, color: colors.text }}>
+                  {lead.email || "N/A"}
+                </Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  Phone
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Text style={{ fontSize: 12, color: colors.text }}>
+                  {lead.phone || "N/A"}
+                </Text>
+              </View>
+
+              <View
+                style={[styles.notesSection, { borderTopColor: colors.border }]}
+              >
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "600",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    color: colors.textSecondary,
+                    marginBottom: 4,
+                  }}
+                >
+                  Notes Cache
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontStyle: "italic",
+                    color: colors.textSecondary,
+                  }}
+                >
+                  {lead.notes || "No notes registered."}
+                </Text>
               </View>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}1A` }]}>
-              <Text style={[styles.statusBadgeText, { color: colors.primary }]}>
-                {lead.status}
+
+            <View style={styles.profileActions}>
+              <Pressable
+                onPress={() => setEditModalVisible(true)}
+                style={[
+                  styles.editProfileBtn,
+                  {
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    backgroundColor: "transparent",
+                  },
+                ]}
+              >
+                <Ionicons name="create-outline" size={16} color={colors.text} />
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "bold",
+                    fontSize: 13,
+                  }}
+                >
+                  Edit Details
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* AI Auditing */}
+          <View
+            style={[
+              glassStyle,
+              styles.profileCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <Ionicons name="sparkles" size={20} color={colors.primary} />
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: "bold",
+                  marginLeft: 8,
+                  color: colors.text,
+                }}
+              >
+                AI CRM Auditor
               </Text>
+              <View style={{ flex: 1 }} />
+              <Pressable
+                onPress={handleRunAiAudit}
+                disabled={aiLoading}
+                style={{
+                  backgroundColor: colors.primary,
+                  height: 32,
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 11 }}
+                >
+                  Run Audit
+                </Text>
+              </Pressable>
             </View>
-          </View>
 
-          {/* Details list */}
-          <View style={[styles.detailsBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Deal Valuation:</Text>
-              <Text style={[styles.detailValue, { color: colors.text }]}>${lead.value.toLocaleString()}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Phone number:</Text>
-              <Text style={[styles.detailValue, styles.detailValueText, { color: colors.text }]}>{lead.phone || "Not provided"}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Email address:</Text>
-              <Text style={[styles.detailValue, styles.detailValueText, { color: colors.text }]}>{lead.email || "Not provided"}</Text>
-            </View>
-            <View style={[styles.notesSection, { borderTopColor: `${colors.border}66` }]}>
-              <Text style={[styles.notesHeaderLabel, { color: colors.textSecondary }]}>Notes</Text>
-              <Text style={[styles.notesText, { color: colors.textSecondary }]}>{lead.notes || "No notes written."}</Text>
-            </View>
-          </View>
+            {aiLoading && (
+              <ActivityIndicator
+                color={colors.primary}
+                style={{ marginVertical: 12 }}
+              />
+            )}
 
-          {/* Direct Action Buttons */}
-          <View style={styles.profileActions}>
-            <Pressable 
-              onPress={() => setEditModalVisible(true)}
-              style={[styles.editProfileBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
-            >
-              <Ionicons name="create-outline" size={16} color={colors.primary} />
-              <Text style={[styles.editProfileBtnText, { color: colors.primary }]}>Edit Profile</Text>
-            </Pressable>
-            <Pressable 
-              onPress={throttledDelete}
-              style={[styles.deleteLeadBtn, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}4D`, borderWidth: 1 }]}
-            >
-              <Ionicons name="trash-outline" size={16} color={colors.danger} />
-              <Text style={[styles.deleteLeadBtnText, { color: colors.danger }]}>Delete Lead</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* AI CRM Agent Panel */}
-        <View style={[glassStyle, styles.aiCard, { backgroundColor: `${colors.primary}0D`, borderColor: `${colors.primary}33` }]}>
-          <View style={styles.aiHeader}>
-            <View style={styles.aiHeaderLeft}>
-              <Ionicons name="sparkles" size={18} color={colors.primary} />
-              <Text style={[styles.aiTitle, { color: colors.primary }]}>Proactive AI CRM Audit</Text>
-            </View>
-            
-            <Pressable 
-              onPress={throttledAudit}
-              disabled={aiLoading}
-              style={[styles.runAuditBtn, { backgroundColor: `${colors.primary}26`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
-            >
-              <Text style={[styles.runAuditBtnText, { color: colors.primary }]}>
-                {aiLoading ? "Analyzing..." : "Run AI Audit"}
-              </Text>
-            </Pressable>
-          </View>
-
-          {aiLoading && <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />}
-
-          {aiResult ? (
-            <View style={styles.aiResultContainer}>
-              <View style={[styles.aiScoreRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                <View style={[styles.gradeAvatar, { backgroundColor: `${colors.primary}33`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}>
-                  <Text style={[styles.gradeText, { color: colors.primary }]}>{aiResult.grade}</Text>
-                </View>
-                <View style={styles.aiSummaryContent}>
-                  <Text style={[styles.scoreTitle, { color: colors.text }]}>Lead Score: {aiResult.score}/100</Text>
-                  <Text style={[styles.summaryText, { color: colors.textSecondary }]}>{aiResult.summary}</Text>
-                </View>
-              </View>
-
-              <View style={[styles.aiActionBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                <Text style={[styles.boxLabel, { color: colors.primary }]}>Suggested Next Step:</Text>
-                <Text style={[styles.boxContentText, { color: colors.textSecondary }]}>{aiResult.suggestedAction}</Text>
-              </View>
-
-              {aiResult.proposedQuickReply && (
-                <View style={[styles.aiActionBox, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                  <Text style={[styles.boxLabel, { color: colors.accent }]}>Generated Draft Reply:</Text>
-                  <Text style={[styles.boxDraftText, { color: colors.textSecondary }]}>"{aiResult.proposedQuickReply}"</Text>
-                  
-                  <View style={styles.replyActions}>
-                    <Pressable 
-                      onPress={() => throttledSendMessage("whatsapp", aiResult?.proposedQuickReply || "")}
-                      disabled={actionLoading}
-                      style={[styles.dispatchBtn, { backgroundColor: `${colors.success}33`, borderColor: `${colors.success}66`, borderWidth: 1 }]}
+            {aiResult ? (
+              <View style={{ gap: 12 }}>
+                <View
+                  style={[
+                    styles.aiScoreRow,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.gradeAvatar,
+                      {
+                        backgroundColor: `${colors.primary}33`,
+                        borderColor: `${colors.primary}4D`,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 24,
+                        fontWeight: "bold",
+                        color: colors.primary,
+                      }}
                     >
-                      <Ionicons name="logo-whatsapp" size={14} color={colors.success} />
-                      <Text style={[styles.dispatchBtnText, { color: colors.success }]}>Send WhatsApp</Text>
-                    </Pressable>
-                    <Pressable 
-                      onPress={() => throttledSendMessage("sms", aiResult?.proposedQuickReply || "")}
-                      disabled={actionLoading}
-                      style={[styles.dispatchBtn, { backgroundColor: `${colors.primary}33`, borderColor: `${colors.primary}66`, borderWidth: 1 }]}
+                      {aiResult.grade}
+                    </Text>
+                  </View>
+                  <View style={{ marginLeft: 12, flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "bold",
+                        color: colors.text,
+                      }}
                     >
-                      <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-                      <Text style={[styles.dispatchBtnText, { color: colors.primary }]}>Send SMS</Text>
-                    </Pressable>
+                      Lead Score: {aiResult.score}/100
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                        marginTop: 4,
+                      }}
+                    >
+                      {aiResult.summary}
+                    </Text>
                   </View>
                 </View>
-              )}
-            </View>
-          ) : (
-            <View style={styles.aiEmptyState}>
-              <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>Run the AI audit to grade this contact and auto-generate follow-up scripts.</Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
 
-      {/* Edit Contact Modal */}
-      {editModalVisible && (
-        <Modal transparent visible={editModalVisible} animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalCard, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Contact Details</Text>
-                <Pressable onPress={() => setEditModalVisible(false)} style={styles.closeBtn}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </Pressable>
-              </View>
+                <View
+                  style={[
+                    styles.aiActionBox,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "bold",
+                      color: colors.primary,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Suggested Next Step:
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {aiResult.suggestedAction}
+                  </Text>
+                </View>
 
-              <TextInput
-                placeholder="Full Name"
-                placeholderTextColor={colors.textMuted}
-                value={formData.name}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, name: text }))}
-                style={[glassInputStyle, styles.input]}
-              />
+                {aiResult.proposedQuickReply && (
+                  <View
+                    style={[
+                      styles.aiActionBox,
+                      {
+                        backgroundColor: colors.bg,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "bold",
+                        color: colors.accent,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Generated Draft Reply:
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontStyle: "italic",
+                        color: colors.textSecondary,
+                      }}
+                    >
+                      "{aiResult.proposedQuickReply}"
+                    </Text>
 
-              <View style={styles.inputRow}>
-                <TextInput
-                  placeholder="Valuation ($)"
-                  placeholderTextColor={colors.textMuted}
-                  value={formData.value}
-                  onChangeText={(text) => setFormData(prev => ({ ...prev, value: text }))}
-                  keyboardType="numeric"
-                  style={[glassInputStyle, styles.input, { flex: 1 }]}
-                />
-              </View>
-
-              <View style={styles.statusSelectContainer}>
-                <Text style={[styles.statusSelectLabel, { color: colors.textSecondary }]}>Status</Text>
-                <View style={styles.statusPillsRow}>
-                  {(["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const).map((statusOption) => {
-                    const isSelected = formData.status === statusOption;
-                    let activeBg = colors.primary;
-                    if (statusOption === "WON") activeBg = colors.success;
-                    if (statusOption === "LOST") activeBg = colors.danger;
-                    if (statusOption === "QUALIFIED") activeBg = colors.primary;
-                    if (statusOption === "CONTACTED") activeBg = colors.accent;
-
-                    return (
+                    <View
+                      style={{ flexDirection: "row", gap: 12, marginTop: 12 }}
+                    >
                       <Pressable
-                        key={statusOption}
-                        onPress={() => setFormData(prev => ({ ...prev, status: statusOption }))}
+                        onPress={() =>
+                          throttledSendMessage(
+                            "whatsapp",
+                            aiResult.proposedQuickReply || "",
+                          )
+                        }
+                        disabled={actionLoading}
                         style={[
-                          styles.statusPill,
-                          isSelected
-                            ? { backgroundColor: activeBg }
-                            : { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }
+                          styles.dispatchBtn,
+                          {
+                            backgroundColor: `${colors.success}33`,
+                            borderColor: `${colors.success}66`,
+                            borderWidth: 1,
+                          },
                         ]}
                       >
+                        <Ionicons
+                          name="logo-whatsapp"
+                          size={14}
+                          color={colors.success}
+                        />
                         <Text
-                          style={[
-                            styles.statusPillText,
-                            isSelected ? { color: "#FFFFFF", fontWeight: "bold" } : { color: colors.textSecondary }
-                          ]}
+                          style={{
+                            color: colors.success,
+                            fontSize: 11,
+                            fontWeight: "bold",
+                          }}
                         >
-                          {statusOption}
+                          Send WhatsApp
                         </Text>
                       </Pressable>
-                    );
-                  })}
+
+                      <Pressable
+                        onPress={() =>
+                          throttledSendMessage(
+                            "sms",
+                            aiResult.proposedQuickReply || "",
+                          )
+                        }
+                        disabled={actionLoading}
+                        style={[
+                          styles.dispatchBtn,
+                          {
+                            backgroundColor: `${colors.primary}33`,
+                            borderColor: `${colors.primary}66`,
+                            borderWidth: 1,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="chatbubble-ellipses-outline"
+                          size={14}
+                          color={colors.primary}
+                        />
+                        <Text
+                          style={{
+                            color: colors.primary,
+                            fontSize: 11,
+                            fontWeight: "bold",
+                          }}
+                        >
+                          Send SMS
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  fontStyle: "italic",
+                  textAlign: "center",
+                  paddingVertical: 12,
+                }}
+              >
+                Run the AI audit to grade this contact and auto-generate
+                follow-up scripts.
+              </Text>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Edit Contact Modal */}
+        {editModalVisible && (
+          <Modal transparent visible={editModalVisible} animationType="slide">
+            <View style={styles.modalOverlay}>
+              <View
+                style={[
+                  styles.modalCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 18,
+                      fontWeight: "bold",
+                      color: colors.text,
+                    }}
+                  >
+                    Edit Contact Details
+                  </Text>
+                  <View style={{ flex: 1 }} />
+                  <Pressable onPress={() => setEditModalVisible(false)}>
+                    <Ionicons name="close" size={24} color={colors.text} />
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  value={formData.name}
+                  onChangeText={(val) =>
+                    setFormData((prev) => ({ ...prev, name: val }))
+                  }
+                  placeholder="Full Name"
+                  placeholderTextColor={colors.textMuted}
+                  style={[glassInputStyle, styles.input]}
+                />
+
+                <TextInput
+                  value={formData.value}
+                  onChangeText={(val) =>
+                    setFormData((prev) => ({ ...prev, value: val }))
+                  }
+                  placeholder="Valuation ($)"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numeric"
+                  style={[glassInputStyle, styles.input]}
+                />
+
+                <View style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Status
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {(
+                      ["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const
+                    ).map((opt) => {
+                      const isSel = formData.status === opt;
+                      return (
+                        <Pressable
+                          key={opt}
+                          onPress={() =>
+                            setFormData((prev) => ({ ...prev, status: opt }))
+                          }
+                          style={[
+                            styles.statusPill,
+                            isSel
+                              ? { backgroundColor: colors.primary }
+                              : {
+                                  backgroundColor: colors.bg,
+                                  borderColor: colors.border,
+                                  borderWidth: 1,
+                                },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              color: isSel ? "#FFFFFF" : colors.textSecondary,
+                            }}
+                          >
+                            {opt}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <TextInput
+                  value={formData.email}
+                  onChangeText={(val) =>
+                    setFormData((prev) => ({ ...prev, email: val }))
+                  }
+                  placeholder="Email address"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="email-address"
+                  style={[glassInputStyle, styles.input]}
+                />
+
+                <TextInput
+                  value={formData.phone}
+                  onChangeText={(val) =>
+                    setFormData((prev) => ({ ...prev, phone: val }))
+                  }
+                  placeholder="Phone number"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="phone-pad"
+                  style={[glassInputStyle, styles.input]}
+                />
+
+                <TextInput
+                  value={formData.notes}
+                  onChangeText={(val) =>
+                    setFormData((prev) => ({ ...prev, notes: val }))
+                  }
+                  placeholder="Add notes..."
+                  placeholderTextColor={colors.textMuted}
+                  style={[glassInputStyle, styles.input, { height: 60 }]}
+                />
+
+                <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+                  <Pressable
+                    onPress={() => setEditModalVisible(false)}
+                    style={[
+                      styles.modalCancelBtn,
+                      {
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        backgroundColor: "transparent",
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: colors.text, fontWeight: "bold" }}>
+                      Cancel
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={throttledUpdate}
+                    style={[
+                      styles.modalSaveBtn,
+                      { backgroundColor: colors.primary },
+                    ]}
+                  >
+                    <Text style={{ color: "#FFFFFF", fontWeight: "bold" }}>
+                      Save Changes
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
-
-              <TextInput
-                placeholder="Email address"
-                placeholderTextColor={colors.textMuted}
-                value={formData.email}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, email: text }))}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                style={[glassInputStyle, styles.input]}
-              />
-
-              <TextInput
-                placeholder="Phone number"
-                placeholderTextColor={colors.textMuted}
-                value={formData.phone}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, phone: text }))}
-                keyboardType="phone-pad"
-                style={[glassInputStyle, styles.input]}
-              />
-
-              <View style={styles.notesHeader}>
-                <Text style={[styles.notesHeaderLabel, { color: colors.textSecondary }]}>Notes Draft</Text>
-                <Text style={[styles.notesCharCount, { color: colors.textMuted }]}>{debouncedNotes.length} chars (debounced)</Text>
-              </View>
-              <TextInput
-                placeholder="Add notes..."
-                placeholderTextColor={colors.textMuted}
-                value={formData.notes}
-                onChangeText={(text) => setFormData(prev => ({ ...prev, notes: text }))}
-                multiline
-                numberOfLines={3}
-                style={[glassInputStyle, styles.input, styles.multilineInput]}
-              />
-
-              <View style={styles.modalActions}>
-                <Pressable 
-                  onPress={() => setEditModalVisible(false)}
-                  style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                >
-                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Cancel</Text>
-                </Pressable>
-                <Pressable 
-                  onPress={throttledUpdate}
-                  style={[styles.modalSaveBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Text style={styles.modalSaveBtnText}>Save Changes</Text>
-                </Pressable>
-              </View>
             </View>
-          </View>
-        </Modal>
-      )}
-    </View>
+          </Modal>
+        )}
+
+        {/* Alerts */}
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          buttons={alertConfig.buttons}
+          onClose={() =>
+            setAlertConfig((prev) => ({ ...prev, visible: false }))
+          }
+        />
+      </SafeAreaView>
+    </Host>
   );
 }
 
@@ -552,7 +948,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     borderBottomWidth: 1,
   },
@@ -560,15 +955,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    padding: 4,
-  },
-  backText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
   },
   deleteHeaderBtn: {
     padding: 4,
@@ -580,12 +966,12 @@ const styles = StyleSheet.create({
   profileCard: {
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderRadius: 12,
   },
   profileHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
   },
   profileHeaderLeft: {
     flexDirection: "row",
@@ -600,204 +986,73 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: {
-    fontWeight: "bold",
-    fontSize: 18,
-  },
   leadName: {
     fontWeight: "bold",
     fontSize: 18,
   },
-  leadId: {
-    fontSize: 10,
-    marginTop: 2,
-  },
   statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: "bold",
+    borderRadius: 12,
   },
   detailsBox: {
     borderWidth: 1,
     padding: 16,
     borderRadius: 14,
     gap: 12,
+    marginTop: 12,
   },
   detailRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-  },
-  detailLabel: {
-    fontSize: 12,
-  },
-  detailValue: {
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  detailValueText: {
-    fontSize: 12,
   },
   notesSection: {
     borderTopWidth: 1,
     paddingTop: 12,
     marginTop: 4,
   },
-  notesHeaderLabel: {
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  notesText: {
-    fontSize: 12,
-    fontStyle: "italic",
-  },
   profileActions: {
     flexDirection: "row",
-    gap: 12,
     marginTop: 16,
   },
   editProfileBtn: {
     flex: 1,
-    borderWidth: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    height: 40,
+    borderRadius: 10,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-  },
-  editProfileBtnText: {
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  deleteLeadBtn: {
-    flex: 1,
-    borderWidth: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  deleteLeadBtnText: {
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  aiCard: {
-    padding: 16,
-  },
-  aiHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  aiHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  aiTitle: {
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  runAuditBtn: {
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  runAuditBtnText: {
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  aiResultContainer: {
-    gap: 12,
   },
   aiScoreRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
     padding: 12,
-    borderRadius: 14,
-  },
-  gradeAvatar: {
-    width: 44,
-    height: 44,
     borderWidth: 1,
     borderRadius: 12,
+    alignItems: "center",
+  },
+  gradeAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  gradeText: {
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  aiSummaryContent: {
-    flex: 1,
-  },
-  scoreTitle: {
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  summaryText: {
-    fontSize: 10,
-    marginTop: 2,
-  },
   aiActionBox: {
-    borderWidth: 1,
     padding: 12,
-    borderRadius: 14,
-  },
-  boxLabel: {
-    fontSize: 10,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  boxContentText: {
-    fontSize: 12,
-  },
-  boxDraftText: {
-    fontSize: 12,
-    fontStyle: "italic",
-    marginBottom: 12,
-  },
-  replyActions: {
-    flexDirection: "row",
-    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 12,
   },
   dispatchBtn: {
     flex: 1,
-    borderWidth: 1,
-    paddingVertical: 8,
+    height: 36,
     borderRadius: 8,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 6,
-  },
-  dispatchBtnText: {
-    fontSize: 11,
-    fontWeight: "bold",
-  },
-  aiEmptyState: {
-    paddingVertical: 24,
-    alignItems: "center",
-  },
-  emptyStateText: {
-    fontSize: 12,
-    fontStyle: "italic",
-    textAlign: "center",
-    lineHeight: 18,
+    gap: 8,
   },
   modalOverlay: {
     flex: 1,
@@ -811,89 +1066,32 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: "100%",
   },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  closeBtn: {
-    padding: 4,
-  },
   input: {
+    height: 44,
     marginBottom: 12,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 0,
-  },
-  statusSelectContainer: {
-    marginBottom: 12,
-  },
-  statusSelectLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 6,
-    paddingLeft: 4,
-  },
-  statusPillsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    width: "100%",
+    paddingHorizontal: 12,
+    borderRadius: 10,
   },
   statusPill: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  statusPillText: {
-    fontSize: 11,
-  },
-  notesHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
-    paddingHorizontal: 4,
-  },
-  notesCharCount: {
-    fontSize: 10,
-  },
-  multilineInput: {
-    textAlignVertical: "top",
-    marginBottom: 20,
-  },
-  modalActions: {
-    flexDirection: "row",
-    gap: 12,
   },
   modalCancelBtn: {
     flex: 1,
+    height: 40,
     borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 12,
+    justifyContent: "center",
     alignItems: "center",
-  },
-  modalCancelBtnText: {
-    fontWeight: "bold",
-    fontSize: 14,
   },
   modalSaveBtn: {
     flex: 1,
+    height: 40,
     borderRadius: 12,
-    paddingVertical: 12,
+    justifyContent: "center",
     alignItems: "center",
-  },
-  modalSaveBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "bold",
-    fontSize: 14,
   },
 });

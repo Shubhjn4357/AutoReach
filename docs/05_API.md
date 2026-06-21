@@ -8,6 +8,7 @@
 ## Endpoint Flow
 
 Every backend route handler must strictly implement:
+
 1. **Validation**: Validate request parameters, headers, and body using schemas (e.g. Zod). Never bypass validation.
 2. **Authentication**: Verify bearer JWT tokens, extracting sub IDs and tenant references.
 3. **Business Logic**: Process logic inside services/actions (do not put core business logic directly in route handlers).
@@ -17,6 +18,7 @@ Every backend route handler must strictly implement:
 ## Unified JSON Response Contract
 
 ### Successful Response
+
 ```json
 {
   "success": true,
@@ -27,6 +29,7 @@ Every backend route handler must strictly implement:
 ```
 
 ### Error Response
+
 ```json
 {
   "success": false,

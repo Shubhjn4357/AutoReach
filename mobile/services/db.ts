@@ -68,9 +68,13 @@ export async function getDb() {
   return dbInstance;
 }
 
-export async function initDb() {
-  const db = await getDb();
-  
+export async function initDb(db?: SQLite.SQLiteDatabase) {
+  if (db) {
+    dbInstance = db;
+  } else {
+    db = await getDb();
+  }
+
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -136,13 +140,36 @@ export async function initDb() {
     );
   `);
 
+  // Sent Messages Tracking Table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS sent_messages_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel TEXT NOT NULL,
+      recipient_phone TEXT NOT NULL,
+      status TEXT NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+  `);
+
+  // Pre-configured Message Templates Table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS message_templates (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
   console.log("Local SQLite tables initialized.");
 }
 
 export async function getLocalLeads(): Promise<Lead[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlLead>("SELECT * FROM leads ORDER BY created_at DESC");
-  return rows.map(r => ({
+  const rows = await db.getAllAsync<RawSqlLead>(
+    "SELECT * FROM leads ORDER BY created_at DESC",
+  );
+  return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
     name: r.name,
@@ -152,7 +179,7 @@ export async function getLocalLeads(): Promise<Lead[]> {
     value: r.value,
     notes: r.notes,
     createdAt: r.created_at,
-    updatedAt: r.updated_at
+    updatedAt: r.updated_at,
   }));
 }
 
@@ -171,11 +198,16 @@ export async function createLocalLead(lead: Lead) {
       lead.value,
       lead.notes,
       typeof lead.createdAt === "number" ? lead.createdAt : Date.now(),
-      typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now()
-    ]
+      typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now(),
+    ],
   );
 
-  await enqueueSyncOperation("leads", "CREATE", lead.id, lead as unknown as Record<string, unknown>);
+  await enqueueSyncOperation(
+    "leads",
+    "CREATE",
+    lead.id,
+    lead as unknown as Record<string, unknown>,
+  );
 }
 
 export async function updateLocalLead(lead: Lead) {
@@ -190,10 +222,15 @@ export async function updateLocalLead(lead: Lead) {
       lead.value,
       lead.notes,
       Date.now(),
-      lead.id
-    ]
+      lead.id,
+    ],
   );
-  await enqueueSyncOperation("leads", "UPDATE", lead.id, lead as unknown as Record<string, unknown>);
+  await enqueueSyncOperation(
+    "leads",
+    "UPDATE",
+    lead.id,
+    lead as unknown as Record<string, unknown>,
+  );
 }
 
 export async function deleteLocalLead(id: string) {
@@ -205,8 +242,10 @@ export async function deleteLocalLead(id: string) {
 // Tasks Helpers
 export async function getLocalTasks(): Promise<Task[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlTask>("SELECT * FROM tasks ORDER BY created_at DESC");
-  return rows.map(r => ({
+  const rows = await db.getAllAsync<RawSqlTask>(
+    "SELECT * FROM tasks ORDER BY created_at DESC",
+  );
+  return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
     leadId: r.lead_id,
@@ -214,23 +253,25 @@ export async function getLocalTasks(): Promise<Task[]> {
     description: r.description,
     status: r.status as Task["status"],
     dueDate: r.due_date,
-    createdAt: r.created_at
+    createdAt: r.created_at,
   }));
 }
 
 export async function createLocalTask(task: Task) {
   const db = await getDb();
-  const bindDueDate = task.dueDate instanceof Date 
-    ? task.dueDate.getTime() 
-    : typeof task.dueDate === "string" 
-      ? new Date(task.dueDate).getTime() 
-      : task.dueDate || null;
+  const bindDueDate =
+    task.dueDate instanceof Date
+      ? task.dueDate.getTime()
+      : typeof task.dueDate === "string"
+        ? new Date(task.dueDate).getTime()
+        : task.dueDate || null;
 
-  const bindCreatedAt = task.createdAt instanceof Date 
-    ? task.createdAt.getTime() 
-    : typeof task.createdAt === "string" 
-      ? new Date(task.createdAt).getTime() 
-      : task.createdAt || Date.now();
+  const bindCreatedAt =
+    task.createdAt instanceof Date
+      ? task.createdAt.getTime()
+      : typeof task.createdAt === "string"
+        ? new Date(task.createdAt).getTime()
+        : task.createdAt || Date.now();
 
   await db.runAsync(
     `INSERT INTO tasks (id, user_id, lead_id, title, description, status, due_date, created_at)
@@ -243,17 +284,28 @@ export async function createLocalTask(task: Task) {
       task.description,
       task.status || "PENDING",
       bindDueDate,
-      bindCreatedAt
-    ]
+      bindCreatedAt,
+    ],
   );
-  await enqueueSyncOperation("tasks", "CREATE", task.id, task as unknown as Record<string, unknown>);
+  await enqueueSyncOperation(
+    "tasks",
+    "CREATE",
+    task.id,
+    task as unknown as Record<string, unknown>,
+  );
 }
 
-export async function updateLocalTaskStatus(id: string, status: "PENDING" | "COMPLETED") {
+export async function updateLocalTaskStatus(
+  id: string,
+  status: "PENDING" | "COMPLETED",
+) {
   const db = await getDb();
   await db.runAsync(`UPDATE tasks SET status = ? WHERE id = ?`, [status, id]);
-  
-  const task = await db.getFirstAsync<RawSqlTask>(`SELECT * FROM tasks WHERE id = ?`, [id]);
+
+  const task = await db.getFirstAsync<RawSqlTask>(
+    `SELECT * FROM tasks WHERE id = ?`,
+    [id],
+  );
   if (task) {
     await enqueueSyncOperation("tasks", "UPDATE", id, {
       id: task.id,
@@ -263,7 +315,7 @@ export async function updateLocalTaskStatus(id: string, status: "PENDING" | "COM
       description: task.description,
       status: status,
       dueDate: task.due_date,
-      createdAt: task.created_at
+      createdAt: task.created_at,
     } as unknown as Record<string, unknown>);
   }
 }
@@ -277,8 +329,10 @@ export async function deleteLocalTask(id: string) {
 // Drive Files Helpers
 export async function getLocalDriveFiles(): Promise<DriveFile[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlDriveFile>("SELECT * FROM drive_files ORDER BY created_at DESC");
-  return rows.map(r => ({
+  const rows = await db.getAllAsync<RawSqlDriveFile>(
+    "SELECT * FROM drive_files ORDER BY created_at DESC",
+  );
+  return rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
     leadId: r.lead_id,
@@ -287,7 +341,7 @@ export async function getLocalDriveFiles(): Promise<DriveFile[]> {
     mimeType: r.mime_type,
     size: r.size,
     webViewLink: r.web_view_link,
-    createdAt: r.created_at
+    createdAt: r.created_at,
   }));
 }
 
@@ -305,8 +359,8 @@ export async function createLocalDriveFile(file: DriveFile) {
       file.mimeType,
       file.size,
       file.webViewLink || null,
-      file.createdAt || Date.now()
-    ]
+      file.createdAt || Date.now(),
+    ],
   );
 }
 
@@ -315,34 +369,39 @@ export async function enqueueSyncOperation(
   table: "leads" | "tasks",
   operation: "CREATE" | "UPDATE" | "DELETE",
   recordId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO sync_queue ("table", operation, record_id, payload, created_at, attempts)
      VALUES (?, ?, ?, ?, ?, 0)`,
-    [table, operation, recordId, JSON.stringify(payload), Date.now()]
+    [table, operation, recordId, JSON.stringify(payload), Date.now()],
   );
   console.log(`Enqueued sync operation: ${operation} on ${table}`);
 }
 
 export async function getQueuedOperations(): Promise<SyncOperation[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlSyncQueue>('SELECT * FROM sync_queue ORDER BY id ASC');
-  return rows.map(r => ({
+  const rows = await db.getAllAsync<RawSqlSyncQueue>(
+    "SELECT * FROM sync_queue ORDER BY id ASC",
+  );
+  return rows.map((r) => ({
     id: r.id,
     table: r.table,
     operation: r.operation,
     recordId: r.record_id,
     payload: r.payload,
     createdAt: r.created_at,
-    attempts: r.attempts || 0
+    attempts: r.attempts || 0,
   }));
 }
 
 export async function incrementSyncAttempt(id: number) {
   const db = await getDb();
-  await db.runAsync("UPDATE sync_queue SET attempts = attempts + 1 WHERE id = ?", [id]);
+  await db.runAsync(
+    "UPDATE sync_queue SET attempts = attempts + 1 WHERE id = ?",
+    [id],
+  );
 }
 
 export async function dequeueSyncOperation(id: number) {
@@ -350,3 +409,81 @@ export async function dequeueSyncOperation(id: number) {
   await db.runAsync("DELETE FROM sync_queue WHERE id = ?", [id]);
 }
 
+// Log Sent Message
+export async function logSentMessage(
+  channel: string,
+  phone: string,
+  status: string,
+) {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO sent_messages_log (channel, recipient_phone, status, timestamp) VALUES (?, ?, ?, ?)`,
+    [channel, phone, status, Date.now()],
+  );
+}
+
+// Get Message Stats
+export interface MessageStats {
+  totalSent: number;
+  whatsappCount: number;
+  smsCount: number;
+}
+
+export async function getSentMessageStats(): Promise<MessageStats> {
+  const db = await getDb();
+  const totalRow = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sent_messages_log",
+  );
+  const waRow = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sent_messages_log WHERE channel = 'whatsapp'",
+  );
+  const smsRow = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sent_messages_log WHERE channel = 'sms'",
+  );
+  return {
+    totalSent: totalRow?.count || 0,
+    whatsappCount: waRow?.count || 0,
+    smsCount: smsRow?.count || 0,
+  };
+}
+
+// Templates Helpers
+export interface MessageTemplate {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number;
+}
+
+export async function getLocalTemplates(): Promise<MessageTemplate[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    id: string;
+    title: string;
+    body: string;
+    created_at: number;
+  }>("SELECT * FROM message_templates ORDER BY created_at DESC");
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function createLocalTemplate(
+  id: string,
+  title: string,
+  body: string,
+) {
+  const db = await getDb();
+  await db.runAsync(
+    "INSERT OR REPLACE INTO message_templates (id, title, body, created_at) VALUES (?, ?, ?, ?)",
+    [id, title, body, Date.now()],
+  );
+}
+
+export async function deleteLocalTemplate(id: string) {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM message_templates WHERE id = ?", [id]);
+}

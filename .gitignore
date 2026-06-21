@@ -42,3 +42,7 @@ Thumbs.db
 # Generated native directories
 mobile/android/
 mobile/ios/
+
+# Android signing credentials (never commit these!)
+mobile/credentials.json
+mobile/credentials/

@@ -1,5 +1,5 @@
 {
-  "name": "autoreach-single-repo",
+  "name": "autoreach",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -20,24 +20,29 @@
     "bullmq": "^5.8.0",
     "clsx": "^2.1.0",
     "drizzle-orm": "^0.45.2",
+    "expo-dev-client": "~56.0.20",
     "ioredis": "^5.4.1",
     "lucide-react": "^0.300.0",
     "next": "^15.0.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@react-native/metro-config": "0.85.3",
+    "@tailwindcss/postcss": "^4.3.1",
     "@types/node": "^20.11.0",
-    "@types/react": "~18.3.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
+    "@types/react": "~19.2.17",
+    "@types/react-dom": "^19",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/parser": "^8.61.1",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^8.0.0",
+    "eslint": "^10.5.0",
     "postcss": "^8.4.0",
     "prettier": "^3.0.0",
-    "typescript": "^5.0.0"
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3"
   },
   "resolutions": {
     "lightningcss": "1.30.1"

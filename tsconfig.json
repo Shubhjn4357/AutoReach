@@ -21,5 +21,6 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", "mobile", "web"]
+  "exclude": ["node_modules", "dist", "mobile", "web"],
+  "extends": "expo/tsconfig.base"
 }

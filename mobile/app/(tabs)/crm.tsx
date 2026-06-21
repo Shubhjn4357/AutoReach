@@ -1,19 +1,68 @@
 import React, { useEffect, useState } from "react";
-import { Alert, StyleSheet, View, Text, ScrollView, Pressable } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
-import { getLocalLeads, updateLocalLead, deleteLocalLead } from "../../services/db";
+import {
+  getLocalLeads,
+  updateLocalLead,
+  deleteLocalLead,
+} from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { calculatePipelineMetrics } from "../../shared/crm";
+import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { Host } from "@expo/ui";
 
 export default function CRMPipelinesScreen() {
   const { colors, glassStyle } = useTheme();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filterStatus, setFilterStatus] = useState<LeadStatus | "ALL">("ALL");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: "info" | "success" | "warning" | "error";
+    buttons?: AlertButton[];
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
+  const showCustomAlert = (
+    title: string,
+    message: string,
+    type: "info" | "success" | "warning" | "error" = "info",
+    buttons?: AlertButton[],
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons,
+    });
+  };
 
   const loadData = async () => {
     const localLeads = await getLocalLeads();
     setLeads(localLeads);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -24,146 +73,330 @@ export default function CRMPipelinesScreen() {
     const updated: Lead = {
       ...lead,
       status: nextStatus,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
     await updateLocalLead(updated);
     await loadData();
-    Alert.alert("Success", `Lead "${lead.name}" moved to ${nextStatus}.`);
+    showCustomAlert(
+      "Success",
+      `Lead "${lead.name}" moved to ${nextStatus}.`,
+      "success",
+    );
   };
 
   const handleDelete = async (id: string) => {
-    Alert.alert(
+    showCustomAlert(
       "Confirm Delete",
       "Are you sure you want to delete this lead?",
+      "warning",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
+        {
+          text: "Delete",
           style: "destructive",
           onPress: async () => {
             await deleteLocalLead(id);
             await loadData();
-          } 
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
-  const filteredLeads = filterStatus === "ALL" 
-    ? leads 
-    : leads.filter(l => l.status === filterStatus);
+  const filteredLeads =
+    filterStatus === "ALL"
+      ? leads
+      : leads.filter((l) => l.status === filterStatus);
 
   const metrics = calculatePipelineMetrics(leads);
-  const stages: (LeadStatus | "ALL")[] = ["ALL", "NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"];
+  const stages: (LeadStatus | "ALL")[] = [
+    "ALL",
+    "NEW",
+    "CONTACTED",
+    "QUALIFIED",
+    "WON",
+    "LOST",
+  ];
 
   return (
-    <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.headerContainer}>
-          <Text style={[styles.title, { color: colors.text }]}>Deal Funnel</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Manage sales stages and lead values</Text>
-        </View>
-
-        {/* Pipeline Summary Cards */}
-        <View style={styles.summaryRow}>
-          <View style={[glassStyle, styles.metricCard]}>
-            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Total Funnel</Text>
-            <Text style={[styles.metricValue, { color: colors.primary }]}>${metrics.totalValue.toLocaleString()}</Text>
+    <Host style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={["top"]}
+        style={[styles.container, { backgroundColor: colors.bg }]}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={[styles.title, { color: colors.text }]}>Pipeline</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Track conversion stages and deal values
+            </Text>
           </View>
-          <View style={[glassStyle, styles.metricCard]}>
-            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Weighted Projected</Text>
-            <Text style={[styles.metricValue, { color: colors.accent }]}>${Math.round(metrics.weightedValue).toLocaleString()}</Text>
+
+          {/* CRM Summary Metrics Row */}
+          <View style={styles.summaryRow}>
+            <View
+              style={[
+                styles.metricCard,
+                glassStyle,
+                { backgroundColor: colors.surface },
+              ]}
+            >
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                Pipeline Value
+              </Text>
+              <Text style={[styles.metricValue, { color: colors.primary }]}>
+                ${metrics.totalValue.toLocaleString()}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.metricCard,
+                glassStyle,
+                { backgroundColor: colors.surface },
+              ]}
+            >
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                Leads Count
+              </Text>
+              <Text style={[styles.metricValue, { color: colors.success }]}>
+                {metrics.activeCount}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.metricCard,
+                glassStyle,
+                { backgroundColor: colors.surface },
+              ]}
+            >
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                Avg Value
+              </Text>
+              <Text style={[styles.metricValue, { color: colors.accent }]}>
+                $
+                {Math.round(
+                  metrics.activeCount > 0
+                    ? metrics.totalValue / metrics.activeCount
+                    : 0,
+                ).toLocaleString()}
+              </Text>
+            </View>
           </View>
-          <View style={[glassStyle, styles.metricCard]}>
-            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Win Rate</Text>
-            <Text style={[styles.metricValue, { color: colors.success }]}>{metrics.winRate}%</Text>
-          </View>
-        </View>
 
-        {/* Stage Filters Row */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stagesRow}>
-          {stages.map(stG => {
-            const isSelected = filterStatus === stG;
-            return (
-              <Pressable
-                key={stG}
-                onPress={() => setFilterStatus(stG)}
-                style={[
-                  styles.stageBtn,
-                  isSelected
-                    ? { backgroundColor: `${colors.primary}33`, borderColor: colors.primary }
-                    : { backgroundColor: colors.surface, borderColor: colors.border }
-                ]}
-              >
-                <Text style={[styles.stageBtnText, isSelected ? { color: colors.primary, fontWeight: "600" } : { color: colors.textSecondary }]}>
-                  {stG}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Pipelines List */}
-        <View style={styles.listContainer}>
-          {filteredLeads.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No leads match this stage filter.</Text>
-          ) : (
-            filteredLeads.map(lead => (
-              <View key={lead.id} style={[glassStyle, styles.leadCard]}>
-                <View style={styles.leadCardTop}>
-                  <View style={styles.leadCardTopLeft}>
-                    <Text style={[styles.leadName, { color: colors.text }]}>{lead.name}</Text>
-                    <Text style={[styles.leadEmail, { color: colors.textSecondary }]}>{lead.email || "No email"}</Text>
-                  </View>
-                  <View style={styles.leadCardTopRight}>
-                    <Text style={[styles.leadValue, { color: colors.text }]}>${lead.value.toLocaleString()}</Text>
-                    <Text style={[styles.leadValueLabel, { color: colors.textMuted }]}>Valuation</Text>
-                  </View>
-                </View>
-
-                {/* Status Badge */}
-                <View style={styles.statusBadgeRow}>
-                  <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}1A` }]}>
-                    <Text style={[styles.statusBadgeText, { color: colors.primary }]}>
-                      {lead.status}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Quick Pipeline Actions */}
-                <View style={[styles.actionsContainer, { borderTopColor: `${colors.border}80` }]}>
-                  <View style={styles.leftActions}>
-                    {lead.status !== "WON" && (
-                      <Pressable
-                        onPress={() => changeLeadStatus(lead, lead.status === "NEW" ? "CONTACTED" : lead.status === "CONTACTED" ? "QUALIFIED" : "WON")}
-                        style={[styles.actionBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}33` }]}
-                      >
-                        <Text style={[styles.actionBtnText, { color: colors.primary }]}>Advance Stage ➔</Text>
-                      </Pressable>
-                    )}
-                    {lead.status !== "LOST" && lead.status !== "WON" && (
-                      <Pressable
-                        onPress={() => changeLeadStatus(lead, "LOST")}
-                        style={[styles.actionBtn, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}33` }]}
-                      >
-                        <Text style={[styles.actionBtnText, { color: colors.danger }]}>Mark Lost</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                  
-                  <Pressable
-                    onPress={() => handleDelete(lead.id)}
-                    style={styles.deleteBtn}
+          {/* Horizontal stages filtering row */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ maxHeight: 48, marginBottom: 20 }}
+            contentContainerStyle={styles.stagesRow}
+          >
+            {stages.map((stage) => {
+              const isSelected = filterStatus === stage;
+              return (
+                <Pressable
+                  key={stage}
+                  onPress={() => setFilterStatus(stage)}
+                  style={[
+                    styles.stageBtn,
+                    isSelected
+                      ? { backgroundColor: colors.primary }
+                      : {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          borderWidth: 1,
+                        },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: isSelected ? "#FFFFFF" : colors.textSecondary,
+                    }}
                   >
-                    <Text style={[styles.deleteBtnText, { color: colors.danger }]}>Delete</Text>
-                  </Pressable>
+                    {stage}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* Columns cards list */}
+          <View style={styles.listContainer}>
+            {filteredLeads.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                No deals in this stage.
+              </Text>
+            ) : (
+              filteredLeads.map((lead) => (
+                <View
+                  key={lead.id}
+                  style={[
+                    glassStyle,
+                    styles.leadCard,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <View style={styles.leadCardTop}>
+                    <View style={styles.leadCardTopLeft}>
+                      <Text style={[styles.leadName, { color: colors.text }]}>
+                        {lead.name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.leadEmail,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {lead.email || "No email provided"}
+                      </Text>
+                    </View>
+                    <View style={styles.leadCardTopRight}>
+                      <Text
+                        style={[styles.leadValue, { color: colors.primary }]}
+                      >
+                        ${lead.value.toLocaleString()}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              lead.status === "WON"
+                                ? `${colors.success}1A`
+                                : lead.status === "LOST"
+                                  ? `${colors.danger}1A`
+                                  : `${colors.primary}1A`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            {
+                              color:
+                                lead.status === "WON"
+                                  ? colors.success
+                                  : lead.status === "LOST"
+                                    ? colors.danger
+                                    : colors.primary,
+                            },
+                          ]}
+                        >
+                          {lead.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Transition actions */}
+                  <View
+                    style={[
+                      styles.actionsContainer,
+                      { borderTopColor: `${colors.border}80` },
+                    ]}
+                  >
+                    <View style={styles.leftActions}>
+                      {lead.status !== "WON" && (
+                        <Pressable
+                          onPress={() =>
+                            changeLeadStatus(
+                              lead,
+                              lead.status === "NEW"
+                                ? "CONTACTED"
+                                : lead.status === "CONTACTED"
+                                  ? "QUALIFIED"
+                                  : "WON",
+                            )
+                          }
+                          style={[
+                            styles.actionBtn,
+                            {
+                              backgroundColor: `${colors.primary}1A`,
+                              borderColor: `${colors.primary}33`,
+                              borderWidth: 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "600",
+                              color: colors.primary,
+                            }}
+                          >
+                            Advance Stage ➔
+                          </Text>
+                        </Pressable>
+                      )}
+                      {lead.status !== "LOST" && lead.status !== "WON" && (
+                        <Pressable
+                          onPress={() => changeLeadStatus(lead, "LOST")}
+                          style={[
+                            styles.actionBtn,
+                            {
+                              backgroundColor: `${colors.danger}1A`,
+                              borderColor: `${colors.danger}33`,
+                              borderWidth: 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "600",
+                              color: colors.danger,
+                            }}
+                          >
+                            Mark Lost
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }} />
+                    <Pressable
+                      onPress={() => handleDelete(lead.id)}
+                      style={styles.deleteBtn}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "bold",
+                          textDecorationLine: "underline",
+                          color: colors.danger,
+                        }}
+                      >
+                        Delete
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
-              </View>
-            ))
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+              ))
+            )}
+          </View>
+        </ScrollView>
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          buttons={alertConfig.buttons}
+          onClose={() =>
+            setAlertConfig((prev) => ({ ...prev, visible: false }))
+          }
+        />
+      </SafeAreaView>
+    </Host>
   );
 }
 
@@ -209,19 +442,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   stagesRow: {
-    flexDirection: "row",
     gap: 8,
-    marginBottom: 20,
     paddingVertical: 4,
   },
   stageBtn: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  stageBtnText: {
-    fontSize: 12,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   listContainer: {
     gap: 16,
@@ -234,6 +463,8 @@ const styles = StyleSheet.create({
   },
   leadCard: {
     padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   leadCardTop: {
     flexDirection: "row",
@@ -260,21 +491,11 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 14,
   },
-  leadValueLabel: {
-    fontSize: 9,
-    textTransform: "uppercase",
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  statusBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
+    marginTop: 4,
   },
   statusBadgeText: {
     fontSize: 9,
@@ -286,6 +507,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderTopWidth: 1,
     paddingTop: 12,
+    marginTop: 12,
   },
   leftActions: {
     flexDirection: "row",
@@ -293,21 +515,15 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    height: 28,
     borderRadius: 6,
-    borderWidth: 1,
-  },
-  actionBtnText: {
-    fontSize: 10,
-    fontWeight: "600",
+    justifyContent: "center",
+    alignItems: "center",
   },
   deleteBtn: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  deleteBtnText: {
-    fontSize: 11,
-    fontWeight: "bold",
-    textDecorationLine: "underline",
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

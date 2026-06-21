@@ -66,7 +66,9 @@ const lightColors: ThemeColors = {
   accent: "#0D9488",
 };
 
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [theme, setTheme] = useState<ThemeType>("dark");
 
   const toggleTheme = () => {
@@ -89,7 +91,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const glassInputStyle: ViewStyle & TextStyle = {
-    backgroundColor: theme === "dark" ? "rgba(0, 0, 0, 0.3)" : "rgba(255, 255, 255, 0.8)",
+    backgroundColor:
+      theme === "dark" ? "rgba(0, 0, 0, 0.3)" : "rgba(255, 255, 255, 0.8)",
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
@@ -100,7 +103,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, colors, glassStyle, glassInputStyle }}>
+    <ThemeContext.Provider
+      value={{ theme, toggleTheme, colors, glassStyle, glassInputStyle }}
+    >
       {children}
     </ThemeContext.Provider>
   );

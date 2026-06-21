@@ -8,29 +8,38 @@ export interface AIAnalysisResult {
   proposedQuickReply: string;
 }
 
-export async function analyzeLeadProfile(lead: Lead): Promise<AIAnalysisResult> {
+export async function analyzeLeadProfile(
+  lead: Lead,
+): Promise<AIAnalysisResult> {
   const openAiApiKey = process.env.OPENAI_API_KEY;
 
   if (openAiApiKey) {
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openAiApiKey}`
+      const response = await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${openAiApiKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an expert CRM sales analyzer. Output a JSON object containing: score (number 1-100), grade (A,B,C,D,F), summary (string), suggestedAction (string), proposedQuickReply (string).",
+              },
+              {
+                role: "user",
+                content: `Analyze this lead: ${JSON.stringify(lead)}`,
+              },
+            ],
+          }),
         },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          response_format: { type: "json_object" },
-          messages: [
-            {
-              role: "system",
-              content: "You are an expert CRM sales analyzer. Output a JSON object containing: score (number 1-100), grade (A,B,C,D,F), summary (string), suggestedAction (string), proposedQuickReply (string)."
-            },
-            { role: "user", content: `Analyze this lead: ${JSON.stringify(lead)}` }
-          ]
-        })
-      });
+      );
 
       if (response.ok) {
         const result = await response.json();
@@ -66,9 +75,10 @@ export async function analyzeLeadProfile(lead: Lead): Promise<AIAnalysisResult> 
     score,
     grade,
     summary: `Lead "${lead.name}" is evaluated at status ${lead.status} with valuation of $${lead.value.toLocaleString()}.`,
-    suggestedAction: score > 60 
-      ? "Schedule immediate closure call or send contract documents via WhatsApp."
-      : "Trigger follow-up message to qualify target requirements and timeline.",
-    proposedQuickReply: `Hi ${lead.name.split(" ")[0] || "there"}, I wanted to check if you had a moment to sync up on our proposal. Let me know what time works best!`
+    suggestedAction:
+      score > 60
+        ? "Schedule immediate closure call or send contract documents via WhatsApp."
+        : "Trigger follow-up message to qualify target requirements and timeline.",
+    proposedQuickReply: `Hi ${lead.name.split(" ")[0] || "there"}, I wanted to check if you had a moment to sync up on our proposal. Let me know what time works best!`,
   };
 }

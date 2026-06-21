@@ -28,6 +28,7 @@ apps/mobile/
 ## Offline Sync Engine
 
 Every write action (create, update, delete) performs the following cycle:
+
 1. **Local Commit**: Writes directly to SQLite and updates Zustand/Query local cache immediately (no spinner or block on UI).
 2. **Enqueue Operation**: Adds the details (table, action type, payload data) into the SQLite sync queue.
 3. **Background Sync Worker**: Activates periodically (or when network changes to online).

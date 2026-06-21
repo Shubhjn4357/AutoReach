@@ -19,13 +19,77 @@ let state: AppState = {
   token: null,
   user: null,
   apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000",
-  theme: "dark"
+  theme: "dark",
 };
 
 const listeners = new Set<() => void>();
 
 function notify() {
-  listeners.forEach(l => l());
+  listeners.forEach((l) => l());
+}
+import { Platform } from "react-native";
+
+const fallbackStorage = new Map<string, string>();
+
+export async function saveSecureItem(key: string, value: string) {
+  if (Platform.OS === "web") {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(key, value);
+    } else {
+      fallbackStorage.set(key, value);
+    }
+    return;
+  }
+  try {
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      await SecureStore.setItemAsync(key, value);
+      return;
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
+  fallbackStorage.set(key, value);
+}
+
+export async function removeSecureItem(key: string) {
+  if (Platform.OS === "web") {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(key);
+    } else {
+      fallbackStorage.delete(key);
+    }
+    return;
+  }
+  try {
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      await SecureStore.deleteItemAsync(key);
+      return;
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
+  fallbackStorage.delete(key);
+}
+
+export async function getSecureItem(key: string) {
+  if (Platform.OS === "web") {
+    if (typeof localStorage !== "undefined") {
+      return localStorage.getItem(key);
+    } else {
+      return fallbackStorage.get(key) || null;
+    }
+  }
+  try {
+    const isAvailable = await SecureStore.isAvailableAsync();
+    if (isAvailable) {
+      return await SecureStore.getItemAsync(key);
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
+  return fallbackStorage.get(key) || null;
 }
 
 export const useAppStore = () => {
@@ -46,9 +110,9 @@ export const useAppStore = () => {
     setToken: async (token: string | null) => {
       try {
         if (token) {
-          await SecureStore.setItemAsync("auth_token", token);
+          await saveSecureItem("auth_token", token);
         } else {
-          await SecureStore.deleteItemAsync("auth_token");
+          await removeSecureItem("auth_token");
         }
         state = { ...state, token };
         notify();
@@ -67,14 +131,14 @@ export const useAppStore = () => {
     setTheme: (theme: AppState["theme"]) => {
       state = { ...state, theme };
       notify();
-    }
+    },
   };
 };
 
 // Bootstrap store
 export async function bootstrapStore() {
   try {
-    const token = await SecureStore.getItemAsync("auth_token");
+    const token = await getSecureItem("auth_token");
     state = { ...state, token };
     notify();
   } catch (err) {

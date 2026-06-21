@@ -12,8 +12,11 @@ export async function GET(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -21,8 +24,11 @@ export async function GET(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -33,9 +39,12 @@ export async function GET(req: NextRequest) {
         .from(leads)
         .where(eq(leads.userId, decoded.userId));
     } catch (dbError) {
-      console.error("SQLite query failed, falling back to in-memory store:", dbError);
+      console.error(
+        "SQLite query failed, falling back to in-memory store:",
+        dbError,
+      );
       userLeads = Array.from(leadsInMemoryDb.values()).filter(
-        (lead) => lead.userId === decoded.userId
+        (lead) => lead.userId === decoded.userId,
       );
     }
 
@@ -43,12 +52,15 @@ export async function GET(req: NextRequest) {
       success: true,
       data: userLeads,
       message: `Retrieved ${userLeads.length} leads`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }
@@ -58,8 +70,11 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Missing authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Missing authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -67,8 +82,11 @@ export async function POST(req: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid authorization" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid authorization" },
+        },
+        { status: 401 },
       );
     }
 
@@ -77,8 +95,11 @@ export async function POST(req: NextRequest) {
 
     if (!name) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Name is required" } },
-        { status: 400 }
+        {
+          success: false,
+          error: { code: "BAD_REQUEST", message: "Name is required" },
+        },
+        { status: 400 },
       );
     }
 
@@ -94,7 +115,7 @@ export async function POST(req: NextRequest) {
       value: value || 0,
       notes: notes || null,
       createdAt: nowTimestamp,
-      updatedAt: nowTimestamp
+      updatedAt: nowTimestamp,
     };
 
     try {
@@ -108,14 +129,17 @@ export async function POST(req: NextRequest) {
         value: Number(value) || 0,
         notes: notes || null,
         createdAt: nowTimestamp,
-        updatedAt: nowTimestamp
+        updatedAt: nowTimestamp,
       });
     } catch (dbError) {
-      console.error("SQLite insert failed, saving to in-memory store:", dbError);
+      console.error(
+        "SQLite insert failed, saving to in-memory store:",
+        dbError,
+      );
       leadsInMemoryDb.set(newLeadId, {
         ...newLead,
         createdAt: nowTimestamp,
-        updatedAt: nowTimestamp
+        updatedAt: nowTimestamp,
       });
     }
 
@@ -123,12 +147,15 @@ export async function POST(req: NextRequest) {
       success: true,
       data: newLead,
       message: "Lead created successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

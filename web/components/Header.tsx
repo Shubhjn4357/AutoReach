@@ -7,7 +7,11 @@ interface HeaderProps {
   winRate: number;
 }
 
-export default function Header({ activeTab, totalValue, winRate }: HeaderProps) {
+export default function Header({
+  activeTab,
+  totalValue,
+  winRate,
+}: HeaderProps) {
   const formatTabName = (tab: string) => {
     if (tab === "api-status") return "API Status";
     return tab;
@@ -18,7 +22,9 @@ export default function Header({ activeTab, totalValue, winRate }: HeaderProps) 
       <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-secondary)]">
         <span>Console</span>
         <ChevronRight size={12} />
-        <span className="text-[var(--color-text-primary)] capitalize font-bold">{formatTabName(activeTab)} View</span>
+        <span className="text-[var(--color-text-primary)] capitalize font-bold">
+          {formatTabName(activeTab)} View
+        </span>
       </div>
 
       <div className="flex items-center gap-4">
@@ -27,12 +33,19 @@ export default function Header({ activeTab, totalValue, winRate }: HeaderProps) 
           <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
           <span>Monorepo SQLite Live</span>
         </div>
-        
+
         {/* Pipelines Summary */}
         <div className="hidden lg:flex items-center gap-4 bg-[var(--color-bg)] border border-[var(--color-border)] px-4 py-1 rounded-full text-[11px] font-semibold">
-          <span className="text-[var(--color-text-secondary)]">Pipeline: <strong className="text-[#5E6BFF]">${totalValue.toLocaleString()}</strong></span>
+          <span className="text-[var(--color-text-secondary)]">
+            Pipeline:{" "}
+            <strong className="text-[#5E6BFF]">
+              ${totalValue.toLocaleString()}
+            </strong>
+          </span>
           <div className="w-[1px] h-3 bg-[var(--color-border)]" />
-          <span className="text-[var(--color-text-secondary)]">Win Rate: <strong className="text-[#22C55E]">{winRate}%</strong></span>
+          <span className="text-[var(--color-text-secondary)]">
+            Win Rate: <strong className="text-[#22C55E]">{winRate}%</strong>
+          </span>
         </div>
       </div>
     </header>

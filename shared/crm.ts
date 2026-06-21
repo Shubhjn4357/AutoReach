@@ -2,12 +2,18 @@ import { Lead, LeadStatus } from "./types";
 
 export function getConversionProbability(status: LeadStatus): number {
   switch (status) {
-    case "NEW": return 10;
-    case "CONTACTED": return 30;
-    case "QUALIFIED": return 60;
-    case "WON": return 100;
-    case "LOST": return 0;
-    default: return 0;
+    case "NEW":
+      return 10;
+    case "CONTACTED":
+      return 30;
+    case "QUALIFIED":
+      return 60;
+    case "WON":
+      return 100;
+    case "LOST":
+      return 0;
+    default:
+      return 0;
   }
 }
 

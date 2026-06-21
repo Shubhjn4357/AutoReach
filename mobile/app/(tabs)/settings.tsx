@@ -1,21 +1,59 @@
 import React, { useEffect, useState } from "react";
-import { Alert, StyleSheet, View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  Pressable,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
-import { getQueuedOperations, getLocalLeads, getLocalTasks } from "../../services/db";
+import { getQueuedOperations, getLocalLeads } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
-import * as SecureStore from "expo-secure-store";
+import { removeSecureItem } from "../../services/store";
+import { triggerLocalNotification } from "../../services/notifications";
+import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { Host } from "@expo/ui";
 
 export default function SettingsScreen() {
   const store = useAppStore();
   const { colors, glassStyle, glassInputStyle } = useTheme();
-  
+
   const [syncQueueSize, setSyncQueueSize] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
-  const [totalTasks, setTotalTasks] = useState(0);
   const [tempApiUrl, setTempApiUrl] = useState(store.apiUrl);
   const [syncing, setSyncing] = useState(false);
+
+  // Custom Alert State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: "info" | "success" | "warning" | "error";
+    buttons?: AlertButton[];
+  }>({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
+  const showCustomAlert = (
+    title: string,
+    message: string,
+    type: "info" | "success" | "warning" | "error" = "info",
+    buttons?: AlertButton[],
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      buttons,
+    });
+  };
 
   const loadStats = async () => {
     try {
@@ -23,8 +61,6 @@ export default function SettingsScreen() {
       setSyncQueueSize(queue.length);
       const leads = await getLocalLeads();
       setTotalLeads(leads.length);
-      const tasks = await getLocalTasks();
-      setTotalTasks(tasks.length);
     } catch (e) {
       console.warn("Stats read failed", e);
     }
@@ -37,7 +73,7 @@ export default function SettingsScreen() {
   const handleSaveApi = () => {
     if (!tempApiUrl.trim()) return;
     store.setApiUrl(tempApiUrl.trim());
-    Alert.alert("Success", "API Endpoint updated successfully.");
+    showCustomAlert("Success", "API Endpoint updated successfully.", "success");
   };
 
   const handleManualSync = async () => {
@@ -45,17 +81,30 @@ export default function SettingsScreen() {
     const result = await executeSyncCycle();
     setSyncing(false);
     if (result.success) {
-      Alert.alert("Sync Complete", `Successfully synchronized ${result.syncedCount} offline operations.`);
+      showCustomAlert(
+        "Sync Complete",
+        `Successfully synchronized ${result.syncedCount} offline operations.`,
+        "success",
+      );
+      await triggerLocalNotification(
+        "AutoReach Sync Completed",
+        `Successfully synchronized ${result.syncedCount} offline operations.`,
+      );
     } else {
-      Alert.alert("Sync Error", "Could not connect to the API server. Please check settings.");
+      showCustomAlert(
+        "Sync Error",
+        "Could not connect to the API server. Please check settings.",
+        "error",
+      );
     }
     await loadStats();
   };
 
   const handleWipeData = async () => {
-    Alert.alert(
+    showCustomAlert(
       "Confirm Wipe",
       "Are you absolutely sure you want to clear all offline caches and databases from this device?",
+      "warning",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -63,107 +112,206 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await SecureStore.deleteItemAsync("auth_token");
+              await removeSecureItem("auth_token");
               store.setToken(null);
               store.setUser(null);
-              Alert.alert("Success", "Local database cache purged. Please restart the app.");
+              showCustomAlert(
+                "Success",
+                "Local database cache purged. Please restart the app.",
+                "success",
+              );
             } catch (err) {
               console.error(err);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
   return (
-    <SafeAreaView edges={["top"]} style={[styles.container, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        
-        {/* Header */}
-        <View style={styles.headerContainer}>
-          <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>System endpoints and sync utilities</Text>
-        </View>
+    <Host style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={["top"]}
+        style={[styles.container, { backgroundColor: colors.bg }]}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Configure your workspace endpoints and offline caches
+            </Text>
+          </View>
 
-        {/* User Status Profile */}
-        <View style={[glassStyle, styles.sectionCard]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>User Profile</Text>
-          <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Auth Identity:</Text>
-            <Text style={[styles.rowValue, { color: colors.text }]}>{store.user?.email || "mock_shubham@example.com"}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>RBAC Privilege Role:</Text>
-            <Text style={[styles.rowValue, styles.primaryRole, { color: colors.primary }]}>{store.user?.role || "ADMIN (Workspace Creator)"}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>Active SaaS Tier:</Text>
-            <Text style={[styles.rowValue, styles.successTier, { color: colors.success }]}>ENTERPRISE TEAM (Unlimited)</Text>
-          </View>
-        </View>
-
-        {/* API Configuration */}
-        <View style={[glassStyle, styles.sectionCard]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Backend Configuration</Text>
-          <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Server Base API URL:</Text>
-          <TextInput
-            placeholder="API Url"
-            placeholderTextColor={colors.textMuted}
-            value={tempApiUrl}
-            onChangeText={setTempApiUrl}
-            style={[glassInputStyle, styles.input]}
-          />
-          <Pressable 
-            onPress={handleSaveApi}
-            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+          {/* User Account Info */}
+          <View
+            style={[
+              glassStyle,
+              styles.sectionCard,
+              { backgroundColor: colors.surface },
+            ]}
           >
-            <Text style={styles.applyBtnText}>Apply Endpoint Changes</Text>
-          </Pressable>
-        </View>
-
-        {/* Database Statistics */}
-        <View style={[glassStyle, styles.sectionCard]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Offline Statistics</Text>
-          <View style={[styles.statRow, { borderBottomColor: `${colors.border}4D` }]}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Local leads stored:</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{totalLeads}</Text>
-          </View>
-          <View style={[styles.statRow, { borderBottomColor: `${colors.border}4D` }]}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Local tasks checklist:</Text>
-            <Text style={[styles.statValue, { color: colors.text }]}>{totalTasks}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Queued updates pending sync:</Text>
-            <Text style={[styles.statValue, { color: colors.warning }]}>{syncQueueSize}</Text>
-          </View>
-
-          <View style={styles.actionButtonsRow}>
-            <Pressable 
-              onPress={handleManualSync}
-              disabled={syncing}
-              style={[styles.syncBtn, { backgroundColor: `${colors.primary}1A`, borderColor: `${colors.primary}4D`, borderWidth: 1 }]}
-            >
-              <Text style={[styles.syncBtnText, { color: colors.primary }]}>
-                {syncing ? "Synchronizing..." : "Trigger Manual Sync"}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Workspace Account
+            </Text>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                Email Address
               </Text>
-            </Pressable>
-
-            <Pressable 
-              onPress={handleWipeData}
-              style={[styles.purgeBtn, { backgroundColor: `${colors.danger}1A`, borderColor: `${colors.danger}4D`, borderWidth: 1 }]}
-            >
-              <Text style={[styles.purgeBtnText, { color: colors.danger }]}>Purge Database Cache</Text>
-            </Pressable>
+              <Text style={[styles.rowValue, { color: colors.text }]}>
+                {store.user?.email || "offline_dev@autoreach.com"}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                Role Privilege
+              </Text>
+              <Text
+                style={[
+                  styles.rowValue,
+                  styles.primaryRole,
+                  { color: colors.primary },
+                ]}
+              >
+                {store.user?.role || "ADMIN (Local Dev)"}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                Organization ID
+              </Text>
+              <Text style={[styles.rowValue, { color: colors.text }]}>
+                {store.user?.organizationId || "org_mock_123"}
+              </Text>
+            </View>
           </View>
-        </View>
-        
-        <View style={styles.footerContainer}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>AutoReach Client Build v1.0.0 (Production-Level Engine)</Text>
-        </View>
 
-      </ScrollView>
-    </SafeAreaView>
+          {/* API Server Configurations */}
+          <View
+            style={[
+              glassStyle,
+              styles.sectionCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              API Connections
+            </Text>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+              Backend Endpoint URL
+            </Text>
+            <View
+              style={{ flexDirection: "row", gap: 12, alignItems: "center" }}
+            >
+              <TextInput
+                value={tempApiUrl}
+                onChangeText={setTempApiUrl}
+                placeholder="https://..."
+                placeholderTextColor={colors.textMuted}
+                style={[glassInputStyle, { flex: 1, height: 40 }]}
+              />
+              <Pressable
+                onPress={handleSaveApi}
+                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.saveBtnText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Database Cache Stats */}
+          <View
+            style={[
+              glassStyle,
+              styles.sectionCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Local Cache Diagnostics
+            </Text>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                Total Leads Cached
+              </Text>
+              <Text
+                style={[
+                  styles.rowValue,
+                  { color: colors.primary, fontSize: 14 },
+                ]}
+              >
+                {totalLeads}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                Queued Sync Operations
+              </Text>
+              <Text
+                style={[
+                  styles.rowValue,
+                  { color: colors.warning, fontSize: 14 },
+                ]}
+              >
+                {syncQueueSize}
+              </Text>
+            </View>
+
+            <View style={styles.actionButtonsRow}>
+              <Pressable
+                onPress={handleManualSync}
+                disabled={syncing}
+                style={[
+                  styles.syncBtn,
+                  {
+                    backgroundColor: `${colors.primary}1A`,
+                    borderColor: `${colors.primary}4D`,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.syncBtnText, { color: colors.primary }]}>
+                  {syncing ? "Synchronizing..." : "Trigger Manual Sync"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleWipeData}
+                style={[
+                  styles.purgeBtn,
+                  {
+                    backgroundColor: `${colors.danger}1A`,
+                    borderColor: `${colors.danger}4D`,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.purgeBtnText, { color: colors.danger }]}>
+                  Purge Database Cache
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.footerContainer}>
+            <Text style={[styles.footerText, { color: colors.textMuted }]}>
+              AutoReach Client Build v1.0.0 (Production-Level Engine)
+            </Text>
+          </View>
+        </ScrollView>
+        <CustomAlert
+          visible={alertConfig.visible}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          type={alertConfig.type}
+          buttons={alertConfig.buttons}
+          onClose={() =>
+            setAlertConfig((prev) => ({ ...prev, visible: false }))
+          }
+        />
+      </SafeAreaView>
+    </Host>
   );
 }
 
@@ -190,6 +338,8 @@ const styles = StyleSheet.create({
   sectionCard: {
     padding: 16,
     marginBottom: 20,
+    borderWidth: 1,
+    borderRadius: 12,
   },
   sectionTitle: {
     fontSize: 16,
@@ -212,37 +362,22 @@ const styles = StyleSheet.create({
   primaryRole: {
     fontWeight: "bold",
   },
-  successTier: {
-    fontWeight: "bold",
-  },
   inputLabel: {
-    fontSize: 12,
-    marginBottom: 8,
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
   },
-  input: {
-    marginBottom: 12,
-  },
-  applyBtn: {
-    borderRadius: 12,
-    paddingVertical: 12,
+  saveBtn: {
+    paddingHorizontal: 16,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: "center",
     alignItems: "center",
   },
-  applyBtnText: {
+  saveBtnText: {
     color: "#FFFFFF",
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  statRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  statLabel: {
-    fontSize: 12,
-  },
-  statValue: {
     fontSize: 12,
     fontWeight: "bold",
   },
@@ -253,29 +388,34 @@ const styles = StyleSheet.create({
   },
   syncBtn: {
     flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
   },
   syncBtnText: {
-    fontWeight: "bold",
     fontSize: 12,
+    fontWeight: "bold",
   },
   purgeBtn: {
     flex: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
   },
   purgeBtnText: {
-    fontWeight: "bold",
     fontSize: 12,
+    fontWeight: "bold",
   },
   footerContainer: {
+    marginTop: 20,
     alignItems: "center",
-    marginVertical: 16,
   },
   footerText: {
-    fontSize: 9,
+    fontSize: 11,
+    textAlign: "center",
   },
 });

@@ -28,8 +28,8 @@ import { leads } from "../../../../shared/db";
 ## Build Orchestration
 
 Root-level scripts in `package.json` let you start or build target platforms:
+
 - `pnpm web:dev` - Starts the Next.js local development server.
 - `pnpm web:build` - Compiles the Next.js production build.
 - `pnpm mobile:start` - Starts the Expo development bundler.
 - `pnpm lint` - Runs static code checking.
-

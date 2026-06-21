@@ -32,8 +32,7 @@ Surface:
 Card:
   850: "#171717"
 
-Border:
-  "#2A2A2A"
+Border: "#2A2A2A"
 
 Text:
   Primary: "#FFFFFF"
@@ -57,6 +56,7 @@ pill = 999
 ## Spacing Grid
 
 Must always follow multiples of 4:
+
 - `2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128`
 
 ## Elevation Levels

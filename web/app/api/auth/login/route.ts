@@ -13,8 +13,14 @@ export async function POST(req: NextRequest) {
 
     if (!email || !password) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Email and password are required" } },
-        { status: 400 }
+        {
+          success: false,
+          error: {
+            code: "BAD_REQUEST",
+            message: "Email and password are required",
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -32,23 +38,29 @@ export async function POST(req: NextRequest) {
 
     if (!user || !user.passwordHash) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid email or password" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid email or password" },
+        },
+        { status: 401 },
       );
     }
 
     const isValid = verifyPassword(password, user.passwordHash);
     if (!isValid) {
       return NextResponse.json(
-        { success: false, error: { code: "UNAUTHORIZED", message: "Invalid email or password" } },
-        { status: 401 }
+        {
+          success: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid email or password" },
+        },
+        { status: 401 },
       );
     }
 
     const token = signToken({
       userId: user.id,
       email: user.email,
-      name: user.name || undefined
+      name: user.name || undefined,
     });
 
     return NextResponse.json({
@@ -60,16 +72,19 @@ export async function POST(req: NextRequest) {
           email: user.email,
           name: user.name,
           role: user.role,
-          organizationId: user.organizationId
-        }
+          organizationId: user.organizationId,
+        },
       },
       message: "Login successful",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

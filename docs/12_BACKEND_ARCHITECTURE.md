@@ -43,4 +43,3 @@ web/app/api/
   - The Android App (running as an SMS Gateway client) intercepts the push and uses the native SIM card to dispatch the SMS.
   - Status updates (Sent, Failed) are returned to the API callback URL.
 - An abstraction layer is maintained in `shared/sms.ts` to support future upgrades to Twilio/MSG91.
-

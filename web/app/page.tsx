@@ -2,21 +2,22 @@
 
 import React, { useState, useEffect } from "react";
 import { Loader, Sparkles } from "lucide-react";
-import { Lead, LeadStatus, Task } from "../../shared/types";
+import { Lead, LeadStatus } from "../../shared/types";
 import { calculatePipelineMetrics } from "../../shared/crm";
 
 // Import Custom Modular Components
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import LeadsView from "../components/LeadsView";
-import TasksView from "../components/TasksView";
 import ApiStatusView from "../components/ApiStatusView";
 import SettingsView from "../components/SettingsView";
-import { AddLeadModal, EditLeadModal, AddTaskModal } from "../components/Modals";
+import { AddLeadModal, EditLeadModal } from "../components/Modals";
 
 export default function Dashboard() {
   // Navigation, Collapsed state & Session
-  const [activeTab, setActiveTab] = useState<"leads" | "tasks" | "api-status" | "settings">("leads");
+  const [activeTab, setActiveTab] = useState<
+    "leads" | "api-status" | "settings"
+  >("leads");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<any | null>(null);
@@ -26,7 +27,6 @@ export default function Dashboard() {
 
   // Data States
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [driveFiles, setDriveFiles] = useState<any[]>([]);
 
   // Search & Filters (Leads tab)
@@ -42,18 +42,25 @@ export default function Dashboard() {
 
   // Healthchecks
   const [pinging, setPinging] = useState<Record<string, boolean>>({});
-  const [apiHealth, setApiHealth] = useState<Record<string, { status: "idle" | "healthy" | "error"; latency: number | null; data?: string }>>({
+  const [apiHealth, setApiHealth] = useState<
+    Record<
+      string,
+      {
+        status: "idle" | "healthy" | "error";
+        latency: number | null;
+        data?: string;
+      }
+    >
+  >({
     leads: { status: "idle", latency: null },
-    tasks: { status: "idle", latency: null },
     drive: { status: "idle", latency: null },
     sync: { status: "idle", latency: null },
-    whatsapp: { status: "idle", latency: null }
+    whatsapp: { status: "idle", latency: null },
   });
 
   // Modals visibility
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [addTaskModalOpen, setAddTaskModalOpen] = useState(false);
 
   // Forms
   const [tempProfileName, setTempProfileName] = useState("");
@@ -63,7 +70,7 @@ export default function Dashboard() {
     phone: "",
     value: "",
     status: "NEW" as LeadStatus,
-    notes: ""
+    notes: "",
   });
   const [editLeadForm, setEditLeadForm] = useState({
     id: "",
@@ -72,13 +79,7 @@ export default function Dashboard() {
     phone: "",
     value: "",
     status: "NEW" as LeadStatus,
-    notes: ""
-  });
-  const [newTaskForm, setNewTaskForm] = useState({
-    title: "",
-    description: "",
-    leadId: "",
-    dueDate: ""
+    notes: "",
   });
 
   // Load Everything from Backend
@@ -87,7 +88,7 @@ export default function Dashboard() {
     try {
       // Fetch Leads
       const leadsRes = await fetch("/api/leads", {
-        headers: { "Authorization": `Bearer ${authToken}` }
+        headers: { Authorization: `Bearer ${authToken}` },
       });
       const leadsResult = await leadsRes.json();
       if (leadsResult.success) {
@@ -108,7 +109,7 @@ export default function Dashboard() {
           value: 12000,
           notes: "Interested in WhatsApp chatbot enterprise module.",
           createdAt: Date.now() - 86400000 * 3,
-          updatedAt: Date.now() - 86400000
+          updatedAt: Date.now() - 86400000,
         },
         {
           id: "lead_2",
@@ -120,7 +121,7 @@ export default function Dashboard() {
           value: 8500,
           notes: "Followed up via SMS gateway. Requested custom demo.",
           createdAt: Date.now() - 86400000 * 2,
-          updatedAt: Date.now() - 86400000 * 2
+          updatedAt: Date.now() - 86400000 * 2,
         },
         {
           id: "lead_3",
@@ -132,7 +133,7 @@ export default function Dashboard() {
           value: 5000,
           notes: "Inbound registration through public API routing.",
           createdAt: Date.now() - 3600000 * 4,
-          updatedAt: Date.now() - 3600000 * 4
+          updatedAt: Date.now() - 3600000 * 4,
         },
         {
           id: "lead_4",
@@ -144,62 +145,15 @@ export default function Dashboard() {
           value: 24000,
           notes: "Contract signed, Google Drive document structure created.",
           createdAt: Date.now() - 86400000 * 10,
-          updatedAt: Date.now() - 86400000 * 5
-        }
-      ]);
-    }
-
-    try {
-      // Fetch Tasks
-      const tasksRes = await fetch("/api/tasks", {
-        headers: { "Authorization": `Bearer ${authToken}` }
-      });
-      const tasksResult = await tasksRes.json();
-      if (tasksResult.success) {
-        setTasks(tasksResult.data || []);
-      } else {
-        throw new Error("Tasks fetch failed");
-      }
-    } catch (error) {
-      console.warn("Using mock tasks fallback");
-      setTasks([
-        {
-          id: "task_1",
-          userId: "u_1",
-          leadId: "lead_1",
-          title: "Follow up with Acme Tech",
-          description: "Schedule demo for WhatsApp automation dashboard",
-          status: "PENDING",
-          dueDate: Date.now() + 86400000 * 2,
-          createdAt: Date.now()
+          updatedAt: Date.now() - 86400000 * 5,
         },
-        {
-          id: "task_2",
-          userId: "u_1",
-          leadId: "lead_2",
-          title: "Generate proposal agreement",
-          description: "Create PDF proposal and upload to Google Drive client folder",
-          status: "PENDING",
-          dueDate: Date.now() + 86400000,
-          createdAt: Date.now()
-        },
-        {
-          id: "task_3",
-          userId: "u_1",
-          leadId: "lead_4",
-          title: "Contract Handover",
-          description: "Finalize signed deal assets",
-          status: "COMPLETED",
-          dueDate: Date.now() - 3600000 * 5,
-          createdAt: Date.now() - 86400000
-        }
       ]);
     }
 
     try {
       // Fetch Drive Files
       const driveRes = await fetch("/api/drive", {
-        headers: { "Authorization": `Bearer ${authToken}` }
+        headers: { Authorization: `Bearer ${authToken}` },
       });
       const driveResult = await driveRes.json();
       if (driveResult.success) {
@@ -272,8 +226,10 @@ export default function Dashboard() {
 
     return () => {
       if (typeof document !== "undefined") {
-        const scripts = document.querySelectorAll('script[src="https://accounts.google.com/gsi/client"]');
-        scripts.forEach(s => s.remove());
+        const scripts = document.querySelectorAll(
+          'script[src="https://accounts.google.com/gsi/client"]',
+        );
+        scripts.forEach((s) => s.remove());
       }
     };
   }, []);
@@ -283,17 +239,18 @@ export default function Dashboard() {
       const initGsi = () => {
         if ((window as any).google?.accounts?.id) {
           (window as any).google.accounts.id.initialize({
-            client_id: "977069610861-beq8i157adffc1cpe9u16r4qe75bggs1.apps.googleusercontent.com",
+            client_id:
+              "977069610861-beq8i157adffc1cpe9u16r4qe75bggs1.apps.googleusercontent.com",
             callback: (res: any) => {
               loginWithToken(res.credential);
-            }
+            },
           });
           const btnParent = document.getElementById("google-signin-btn");
           if (btnParent) {
             (window as any).google.accounts.id.renderButton(btnParent, {
               theme: "dark",
               size: "large",
-              width: 360
+              width: 360,
             });
           }
         } else {
@@ -345,7 +302,7 @@ export default function Dashboard() {
       value: Number(newLeadForm.value) || 0,
       notes: newLeadForm.notes || "Registered via Dashboard Console.",
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
     setLeads([newLead, ...leads]);
@@ -357,9 +314,9 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(newLead)
+        body: JSON.stringify(newLead),
       });
     } catch (err) {
       console.warn("Leads POST offline, saved locally");
@@ -371,7 +328,7 @@ export default function Dashboard() {
       phone: "",
       value: "",
       status: "NEW",
-      notes: ""
+      notes: "",
     });
   };
 
@@ -379,7 +336,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (!editLeadForm.name || !token) return;
 
-    const updatedLeads = leads.map(l => {
+    const updatedLeads = leads.map((l) => {
       if (l.id === editLeadForm.id) {
         return {
           ...l,
@@ -389,7 +346,7 @@ export default function Dashboard() {
           value: Number(editLeadForm.value) || 0,
           status: editLeadForm.status,
           notes: editLeadForm.notes,
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
         };
       }
       return l;
@@ -404,9 +361,9 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(editLeadForm)
+        body: JSON.stringify(editLeadForm),
       });
     } catch (err) {
       console.warn("Leads update offline");
@@ -415,7 +372,7 @@ export default function Dashboard() {
 
   const handleDeleteLead = async (id: string) => {
     if (!confirm("Are you sure you want to delete this contact?")) return;
-    setLeads(leads.filter(l => l.id !== id));
+    setLeads(leads.filter((l) => l.id !== id));
     setSelectedLeadId(null);
     setAiResult(null);
 
@@ -423,10 +380,10 @@ export default function Dashboard() {
       await fetch(`/api/leads`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ action: "DELETE", id })
+        body: JSON.stringify({ action: "DELETE", id }),
       });
     } catch (err) {
       console.warn("Delete request offline");
@@ -441,7 +398,7 @@ export default function Dashboard() {
       phone: lead.phone || "",
       value: lead.value.toString(),
       status: lead.status,
-      notes: lead.notes || ""
+      notes: lead.notes || "",
     });
     setEditModalOpen(true);
   };
@@ -456,9 +413,9 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(targetLead)
+        body: JSON.stringify(targetLead),
       });
       const result = await response.json();
       if (result.success) {
@@ -471,27 +428,35 @@ export default function Dashboard() {
         score: targetLead.value > 15000 ? 94 : 68,
         grade: targetLead.value > 15000 ? "A" : "B",
         summary: `Self-auditing offline profile data. Valuation: $${targetLead.value.toLocaleString()}. Status: ${targetLead.status}.`,
-        suggestedAction: targetLead.value > 10000 
-          ? "Draft custom enterprise proposal and push files to Drive."
-          : "Schedule quick demo call via WhatsApp gateway.",
-        proposedQuickReply: `Hi ${targetLead.name.split(" ")[0] || "there"}, following up on our proposal. Let me know when is best to sync!`
+        suggestedAction:
+          targetLead.value > 10000
+            ? "Draft custom enterprise proposal and push files to Drive."
+            : "Schedule quick demo call via WhatsApp gateway.",
+        proposedQuickReply: `Hi ${targetLead.name.split(" ")[0] || "there"}, following up on our proposal. Let me know when is best to sync!`,
       });
     } finally {
       setAiLoading(false);
     }
   };
 
-  const handleMessageDispatch = async (channel: "whatsapp" | "sms", text: string) => {
-    if (!leads.find(l => l.id === selectedLeadId)?.phone || !text || !token) return;
+  const handleMessageDispatch = async (
+    channel: "whatsapp" | "sms",
+    text: string,
+  ) => {
+    if (!leads.find((l) => l.id === selectedLeadId)?.phone || !text || !token)
+      return;
     setDispatchLoading(true);
     try {
       const response = await fetch(`/api/${channel}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ phone: leads.find(l => l.id === selectedLeadId)?.phone, text })
+        body: JSON.stringify({
+          phone: leads.find((l) => l.id === selectedLeadId)?.phone,
+          text,
+        }),
       });
       const result = await response.json();
       if (result.success) {
@@ -516,18 +481,18 @@ export default function Dashboard() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           leadId: lead.id,
           fileName,
           mimeType: "text/plain",
-          fileContent: `AutoReach CRM Generated Proposal\n\nClient: ${lead.name}\nValue: $${lead.value}\nPhone: ${lead.phone || 'N/A'}\nEmail: ${lead.email || 'N/A'}\nStatus: ${lead.status}\nDate: ${new Date().toLocaleDateString()}\n\nDynamic follow-up agreement generated inside Admin Console.`
-        })
+          fileContent: `AutoReach CRM Generated Proposal\n\nClient: ${lead.name}\nValue: $${lead.value}\nPhone: ${lead.phone || "N/A"}\nEmail: ${lead.email || "N/A"}\nStatus: ${lead.status}\nDate: ${new Date().toLocaleDateString()}\n\nDynamic follow-up agreement generated inside Admin Console.`,
+        }),
       });
       const result = await response.json();
       if (result.success) {
-        setDriveFiles(prev => [{ ...result.data, leadId: lead.id }, ...prev]);
+        setDriveFiles((prev) => [{ ...result.data, leadId: lead.id }, ...prev]);
         alert("Contract created and saved to Google Drive.");
       } else {
         throw new Error(result.error?.message || "Upload failed");
@@ -541,102 +506,31 @@ export default function Dashboard() {
         mimeType: "text/plain",
         size: 236,
         webViewLink: "#",
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
-      setDriveFiles(prev => [mockFile, ...prev]);
+      setDriveFiles((prev) => [mockFile, ...prev]);
       alert("Offline Mode: Contract draft saved to in-memory database.");
     } finally {
       setGenerateLoading(false);
     }
   };
 
-  // Task Actions
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskForm.title || !token) return;
-
-    const newTaskPayload = {
-      title: newTaskForm.title,
-      description: newTaskForm.description,
-      leadId: newTaskForm.leadId || null,
-      dueDate: newTaskForm.dueDate ? new Date(newTaskForm.dueDate).getTime() : null,
-      status: "PENDING"
-    };
-
-    setAddTaskModalOpen(false);
-
-    try {
-      const response = await fetch("/api/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify(newTaskPayload)
-      });
-      const result = await response.json();
-      if (result.success) {
-        setTasks(prev => [result.data, ...prev]);
-      } else {
-        throw new Error("Task creation failed");
-      }
-    } catch (e) {
-      const mockTask: Task = {
-        id: `task_${Math.random().toString(36).substring(2, 9)}`,
-        userId: user?.id || "u_1",
-        leadId: newTaskForm.leadId || null,
-        title: newTaskForm.title,
-        description: newTaskForm.description || null,
-        status: "PENDING",
-        dueDate: newTaskForm.dueDate ? new Date(newTaskForm.dueDate).getTime() : null,
-        createdAt: Date.now()
-      };
-      setTasks(prev => [mockTask, ...prev]);
-    }
-
-    setNewTaskForm({
-      title: "",
-      description: "",
-      leadId: "",
-      dueDate: ""
-    });
-  };
-
-  const handleToggleTaskStatus = async (task: Task) => {
-    if (!token) return;
-    const nextStatus = task.status === "PENDING" ? "COMPLETED" : "PENDING";
-    
-    // Optimistic UI
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: nextStatus } : t));
-
-    try {
-      await fetch("/api/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          ...task,
-          status: nextStatus
-        })
-      });
-    } catch (e) {
-      console.warn("Task status toggle offline fallback");
-    }
-  };
-
   // Endpoint Pinger healthchecker
-  const pingEndpoint = async (service: string, route: string, method: "GET" | "POST", payload?: any) => {
-    setPinging(prev => ({ ...prev, [service]: true }));
+  const pingEndpoint = async (
+    service: string,
+    route: string,
+    method: "GET" | "POST",
+    payload?: any,
+  ) => {
+    setPinging((prev) => ({ ...prev, [service]: true }));
     const start = performance.now();
     try {
       const options: RequestInit = {
         method,
         headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       };
       if (method === "POST" && payload) {
         options.body = JSON.stringify(payload);
@@ -644,40 +538,43 @@ export default function Dashboard() {
       const response = await fetch(route, options);
       const data = await response.json();
       const end = performance.now();
-      
-      setApiHealth(prev => ({
+
+      setApiHealth((prev) => ({
         ...prev,
         [service]: {
           status: data.success ? "healthy" : "error",
           latency: Math.round(end - start),
-          data: JSON.stringify(data.data || data, null, 2)
-        }
+          data: JSON.stringify(data.data || data, null, 2),
+        },
       }));
     } catch (e: any) {
       const end = performance.now();
-      setApiHealth(prev => ({
+      setApiHealth((prev) => ({
         ...prev,
         [service]: {
           status: "healthy", // Fallback to healthy simulation since monorepo provides offline mocks
           latency: Math.round(end - start),
-          data: `{\n  "status": "simulation_active",\n  "message": "Gateway mock active"\n}`
-        }
+          data: `{\n  "status": "simulation_active",\n  "message": "Gateway mock active"\n}`,
+        },
       }));
     } finally {
-      setPinging(prev => ({ ...prev, [service]: false }));
+      setPinging((prev) => ({ ...prev, [service]: false }));
     }
   };
 
   const metrics = calculatePipelineMetrics(leads);
-  const pendingTasks = tasks.filter(t => t.status === "PENDING");
-  const completedTasks = tasks.filter(t => t.status === "COMPLETED");
 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] text-[var(--color-text-secondary)]">
         <div className="flex flex-col items-center gap-4">
-          <Loader className="animate-spin text-[var(--color-primary)]" size={36} />
-          <span className="text-sm font-medium tracking-wide">Loading Workspace Console...</span>
+          <Loader
+            className="animate-spin text-[var(--color-primary)]"
+            size={36}
+          />
+          <span className="text-sm font-medium tracking-wide">
+            Loading Workspace Console...
+          </span>
         </div>
       </div>
     );
@@ -692,22 +589,33 @@ export default function Dashboard() {
             <div className="bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-secondary)] w-12 h-12 rounded-md flex items-center justify-center shadow-lg">
               <Sparkles className="text-white" size={24} />
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white mt-2">AutoReach</h1>
-            <p className="text-xs text-[var(--color-text-secondary)]">Enterprise CRM & Communications Admin Dashboard</p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white mt-2">
+              AutoReach
+            </h1>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Enterprise CRM & Communications Admin Dashboard
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 items-center">
-            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">Sign in using your Google Credentials</span>
-            <div id="google-signin-btn" className="min-h-[44px] w-full flex justify-center" />
+            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+              Sign in using your Google Credentials
+            </span>
+            <div
+              id="google-signin-btn"
+              className="min-h-[44px] w-full flex justify-center"
+            />
           </div>
 
           <div className="flex items-center gap-3">
             <div className="flex-1 h-[1px] bg-[var(--color-border)]" />
-            <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">or bypass</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">
+              or bypass
+            </span>
             <div className="flex-1 h-[1px] bg-[var(--color-border)]" />
           </div>
 
-          <form 
+          <form
             onSubmit={async (e) => {
               e.preventDefault();
               if (devEmail.trim()) {
@@ -718,8 +626,10 @@ export default function Dashboard() {
             className="flex flex-col gap-4"
           >
             <div className="flex flex-col gap-2">
-              <label className="text-xs text-[var(--color-text-secondary)] font-semibold">Bypass Username / Email</label>
-              <input 
+              <label className="text-xs text-[var(--color-text-secondary)] font-semibold">
+                Bypass Username / Email
+              </label>
+              <input
                 type="text"
                 placeholder="e.g. shubham"
                 value={devEmail}
@@ -728,7 +638,7 @@ export default function Dashboard() {
                 required
               />
             </div>
-            <button 
+            <button
               type="submit"
               className="bg-transparent border border-[var(--color-border)] hover:bg-[var(--color-primary)]/10 hover:border-[var(--color-primary)] text-[var(--color-text-primary)] font-bold py-3 rounded-md text-sm transition-all cursor-pointer"
             >
@@ -743,13 +653,11 @@ export default function Dashboard() {
   // Rendered Dashboard
   return (
     <div className="flex min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] font-sans antialiased transition-colors duration-300">
-      
       {/* 1. Left Vertical Navigation Sidebar */}
-      <Sidebar 
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         leadsCount={leads.length}
-        pendingTasksCount={pendingTasks.length}
         user={user}
         theme={theme}
         toggleThemeMode={toggleThemeMode}
@@ -760,9 +668,8 @@ export default function Dashboard() {
 
       {/* 2. Main Work Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        
         {/* Header toolbar */}
-        <Header 
+        <Header
           activeTab={activeTab}
           totalValue={metrics.totalValue}
           winRate={metrics.winRate}
@@ -770,13 +677,10 @@ export default function Dashboard() {
 
         {/* Scrollable content panels */}
         <main className="flex-1 overflow-y-auto p-6 bg-[var(--color-bg)]">
-          
           {activeTab === "leads" && (
-            <LeadsView 
+            <LeadsView
               leads={leads}
               metrics={metrics}
-              pendingTasksCount={pendingTasks.length}
-              completedTasksCount={completedTasks.length}
               driveFiles={driveFiles}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
@@ -800,19 +704,8 @@ export default function Dashboard() {
             />
           )}
 
-          {activeTab === "tasks" && (
-            <TasksView 
-              tasks={tasks}
-              leads={leads}
-              pendingTasks={pendingTasks}
-              completedTasks={completedTasks}
-              handleToggleTaskStatus={handleToggleTaskStatus}
-              setAddTaskModalOpen={setAddTaskModalOpen}
-            />
-          )}
-
           {activeTab === "api-status" && (
-            <ApiStatusView 
+            <ApiStatusView
               apiHealth={apiHealth}
               pinging={pinging}
               pingEndpoint={pingEndpoint}
@@ -820,7 +713,7 @@ export default function Dashboard() {
           )}
 
           {activeTab === "settings" && (
-            <SettingsView 
+            <SettingsView
               tempProfileName={tempProfileName}
               setTempProfileName={setTempProfileName}
               handleUpdateProfile={handleUpdateProfile}
@@ -828,12 +721,11 @@ export default function Dashboard() {
               toggleThemeMode={toggleThemeMode}
             />
           )}
-
         </main>
       </div>
 
       {/* OVERLAY MODALS */}
-      <AddLeadModal 
+      <AddLeadModal
         isOpen={addModalOpen}
         onClose={() => setAddModalOpen(false)}
         onSubmit={handleAddLead}
@@ -841,23 +733,13 @@ export default function Dashboard() {
         setForm={setNewLeadForm}
       />
 
-      <EditLeadModal 
+      <EditLeadModal
         isOpen={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         onSubmit={handleEditLead}
         form={editLeadForm}
         setForm={setEditLeadForm}
       />
-
-      <AddTaskModal 
-        isOpen={addTaskModalOpen}
-        onClose={() => setAddTaskModalOpen(false)}
-        onSubmit={handleAddTask}
-        form={newTaskForm}
-        setForm={setNewTaskForm}
-        leads={leads}
-      />
-
     </div>
   );
 }

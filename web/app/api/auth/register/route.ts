@@ -13,8 +13,14 @@ export async function POST(req: NextRequest) {
 
     if (!email || !password || !name) {
       return NextResponse.json(
-        { success: false, error: { code: "BAD_REQUEST", message: "Email, password, and name are required" } },
-        { status: 400 }
+        {
+          success: false,
+          error: {
+            code: "BAD_REQUEST",
+            message: "Email, password, and name are required",
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -33,8 +39,14 @@ export async function POST(req: NextRequest) {
 
     if (existingUser) {
       return NextResponse.json(
-        { success: false, error: { code: "CONFLICT", message: "User with this email already exists" } },
-        { status: 409 }
+        {
+          success: false,
+          error: {
+            code: "CONFLICT",
+            message: "User with this email already exists",
+          },
+        },
+        { status: 409 },
       );
     }
 
@@ -49,7 +61,7 @@ export async function POST(req: NextRequest) {
         name: `${name}'s Workspace`,
         subscriptionTier: "FREE",
         subscriptionStatus: "ACTIVE",
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
 
       // Insert new user
@@ -60,20 +72,26 @@ export async function POST(req: NextRequest) {
         passwordHash,
         organizationId: orgId,
         role: "ADMIN",
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
     } catch (dbError) {
       console.error("Database user insertion failed:", dbError);
       return NextResponse.json(
-        { success: false, error: { code: "DATABASE_ERROR", message: "Could not complete registration in DB" } },
-        { status: 500 }
+        {
+          success: false,
+          error: {
+            code: "DATABASE_ERROR",
+            message: "Could not complete registration in DB",
+          },
+        },
+        { status: 500 },
       );
     }
 
     const token = signToken({
       userId,
       email: email.toLowerCase(),
-      name
+      name,
     });
 
     return NextResponse.json({
@@ -85,16 +103,19 @@ export async function POST(req: NextRequest) {
           email: email.toLowerCase(),
           name,
           role: "ADMIN",
-          organizationId: orgId
-        }
+          organizationId: orgId,
+        },
       },
       message: "Registered successfully",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: { code: "INTERNAL_ERROR", message: error.message } },
-      { status: 500 }
+      {
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: error.message },
+      },
+      { status: 500 },
     );
   }
 }

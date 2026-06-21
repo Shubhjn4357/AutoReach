@@ -1,12 +1,16 @@
 {
   "expo": {
     "name": "AutoReach",
-    "slug": "autoreach-single-repo",
+    "slug": "autoreach",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "autoreach",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.shubhjn.autoreach"
@@ -23,6 +27,10 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "buildToolsVersion": "36.0.0"
+          },
+          "headers": {
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
           }
         }
       ],
@@ -31,8 +39,9 @@
       "expo-secure-store"
     ],
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "4db1dd55-0805-4ecb-bdf3-bb41c471d3fb"
+        "projectId": "5236b537-84c4-4da7-a8ba-52d32854d58d"
       }
     }
   }

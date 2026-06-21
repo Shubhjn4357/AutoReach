@@ -1,17 +1,24 @@
-import * as SecureStore from "expo-secure-store";
-import { getQueuedOperations, dequeueSyncOperation, incrementSyncAttempt } from "./db";
+import { getSecureItem } from "./store";
+import {
+  getQueuedOperations,
+  dequeueSyncOperation,
+  incrementSyncAttempt,
+} from "./db";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 const MAX_BACKOFF_MS = 60000; // Cap backoff at 60s
 
-export async function executeSyncCycle(): Promise<{ success: boolean; syncedCount: number }> {
+export async function executeSyncCycle(): Promise<{
+  success: boolean;
+  syncedCount: number;
+}> {
   try {
     const allQueue = await getQueuedOperations();
     if (allQueue.length === 0) {
       return { success: true, syncedCount: 0 };
     }
 
-    const token = await SecureStore.getItemAsync("auth_token");
+    const token = await getSecureItem("auth_token");
     if (!token) {
       console.log("No token in secure storage; skipping sync.");
       return { success: false, syncedCount: 0 };
@@ -19,7 +26,7 @@ export async function executeSyncCycle(): Promise<{ success: boolean; syncedCoun
 
     // Filter queue items using exponential backoff: delay = 2^attempts * 1000 ms
     const now = Date.now();
-    const eligibleOperations = allQueue.filter(item => {
+    const eligibleOperations = allQueue.filter((item) => {
       const attempts = item.attempts || 0;
       if (attempts === 0) return true;
       const delay = Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS);
@@ -31,12 +38,12 @@ export async function executeSyncCycle(): Promise<{ success: boolean; syncedCoun
       return { success: true, syncedCount: 0 };
     }
 
-    const operationsPayload = eligibleOperations.map(q => ({
+    const operationsPayload = eligibleOperations.map((q) => ({
       table: q.table,
       operation: q.operation,
       recordId: q.recordId,
       payload: q.payload,
-      createdAt: q.createdAt
+      createdAt: q.createdAt,
     }));
 
     try {
@@ -44,9 +51,9 @@ export async function executeSyncCycle(): Promise<{ success: boolean; syncedCoun
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ operations: operationsPayload })
+        body: JSON.stringify({ operations: operationsPayload }),
       });
 
       if (!response.ok) {
@@ -72,7 +79,10 @@ export async function executeSyncCycle(): Promise<{ success: boolean; syncedCoun
       }
       return { success: false, syncedCount: 0 };
     } catch (networkError) {
-      console.warn("Network sync dispatch failed, logging attempts in SQLite:", networkError);
+      console.warn(
+        "Network sync dispatch failed, logging attempts in SQLite:",
+        networkError,
+      );
       for (const op of eligibleOperations) {
         await incrementSyncAttempt(op.id);
       }

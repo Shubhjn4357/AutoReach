@@ -15,10 +15,10 @@ All code changes pushed to the `main` branch trigger automated workflows or depl
 Ensure the following variables are configured in production for the Next.js service (`web/`):
 
 ### Next.js API & Dashboard (Vercel or Railway)
+
 - `DATABASE_URL`: Connection string for Turso Database (`libsql://...`).
 - `DATABASE_AUTH_TOKEN`: Auth token for Turso.
 - `JWT_SECRET`: Token hashing key.
 - `GOOGLE_CLIENT_ID` & `GOOGLE_CLIENT_SECRET`: Google OAuth verification credentials.
 - `OPENWA_API_URL`: URL of the isolated OpenWA service container (e.g. Hugging Face Space URL).
 - `EXPO_PUBLIC_API_URL`: Target deployment URL of the API.
-

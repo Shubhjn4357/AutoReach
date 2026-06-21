@@ -7,6 +7,7 @@ This guide provides step-by-step instructions to set up, configure, and run the 
 ## Prerequisites
 
 Before starting, ensure you have the following installed on your system:
+
 - **Node.js**: `v20.x` or higher
 - **pnpm**: `v8.x` or higher
 - **Git**: (Optional, for version tracking)
@@ -16,6 +17,7 @@ Before starting, ensure you have the following installed on your system:
 ## Step 1: Install Dependencies
 
 Clone the repository and run the install command from the root directory:
+
 ```bash
 pnpm install
 ```
@@ -65,6 +67,7 @@ Generate and push Drizzle schema definitions to Turso:
 You can launch both backend and mobile client development services from the root folder:
 
 1. **Start Next.js Backend & Dashboard** (runs on port `3000`):
+
    ```bash
    pnpm web:dev
    ```
@@ -128,13 +131,15 @@ Turso is used as our primary replicated SQLite database. Follow these steps to s
    ```
 3. **Retrieve Credentials**:
    Get the database URL and authentication token to configure your environment variables:
+
    ```bash
    # Get Database URL
    turso db show autoreach-db --url
-   
+
    # Get Auth Token
    turso db tokens create autoreach-db
    ```
+
 4. **Push Schema to Turso**:
    Put these variables into your local `.env` and push the tables:
    ```bash
@@ -209,7 +214,7 @@ If you want to run the entire backend stack for free, you can distribute service
         EXPOSE 7860
         CMD ["--port", "7860", "--socket"]
         ```
-        *(Hugging Face Spaces automatically exposes port `7860` for custom Docker containers).*
+        _(Hugging Face Spaces automatically exposes port `7860` for custom Docker containers)._
      4. Save the file. Hugging Face will automatically build and launch the container on an Always-On instance with **16GB RAM and 2 vCPUs** for 100% free.
      5. Set `OPENWA_API_URL` in your Vercel project settings to your Space URL: `https://<your-username>-<your-space-name>.hf.space`.
 
@@ -263,6 +268,4 @@ Deploying standalone mobile applications to the stores via EAS:
    # Once build completes:
    eas submit --platform ios
    ```
-   *Note: Ensure you have your Apple Developer and Google Play Console credentials set up.*
-
-
+   _Note: Ensure you have your Apple Developer and Google Play Console credentials set up._
