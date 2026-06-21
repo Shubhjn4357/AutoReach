@@ -9,6 +9,7 @@ import {
   TextInput,
   Pressable,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -74,7 +75,6 @@ export default function ContactDetailScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    value: "",
     email: "",
     phone: "",
     notes: "",
@@ -140,7 +140,6 @@ export default function ContactDetailScreen() {
         // Bind form values
         setFormData({
           name: leadData.name,
-          value: leadData.value.toString(),
           email: leadData.email || "",
           phone: leadData.phone || "",
           notes: leadData.notes || "",
@@ -173,7 +172,7 @@ export default function ContactDetailScreen() {
     const updated: Lead = {
       ...lead,
       name,
-      value: parseInt(formData.value) || 0,
+      value: lead.value,
       email: formData.email.trim(),
       phone: formData.phone.trim(),
       status: formData.status,
@@ -421,21 +420,6 @@ export default function ContactDetailScreen() {
                 { borderColor: colors.border, backgroundColor: colors.bg },
               ]}
             >
-              <View style={styles.detailRow}>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                  Deal Value
-                </Text>
-                <View style={{ flex: 1 }} />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "bold",
-                    color: colors.primary,
-                  }}
-                >
-                  ${lead.value.toLocaleString()}
-                </Text>
-              </View>
               <View style={styles.detailRow}>
                 <Text style={{ fontSize: 12, color: colors.textSecondary }}>
                   Email
@@ -754,8 +738,12 @@ export default function ContactDetailScreen() {
         {/* Edit Contact Modal */}
         {editModalVisible && (
           <Modal transparent visible={editModalVisible} animationType="slide">
-            <View style={styles.modalOverlay}>
-              <View
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.modalOverlay}>
+                <View
                 style={[
                   styles.modalCard,
                   {
@@ -794,17 +782,6 @@ export default function ContactDetailScreen() {
                   }
                   placeholder="Full Name"
                   placeholderTextColor={colors.textMuted}
-                  style={[glassInputStyle, styles.input]}
-                />
-
-                <TextInput
-                  value={formData.value}
-                  onChangeText={(val) =>
-                    setFormData((prev) => ({ ...prev, value: val }))
-                  }
-                  placeholder="Valuation ($)"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="numeric"
                   style={[glassInputStyle, styles.input]}
                 />
 
@@ -916,7 +893,8 @@ export default function ContactDetailScreen() {
                 </View>
               </View>
             </View>
-          </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
         )}
 
         {/* Alerts */}

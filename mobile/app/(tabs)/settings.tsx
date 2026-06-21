@@ -6,7 +6,12 @@ import {
   ScrollView,
   TextInput,
   Pressable,
+  Platform,
+  KeyboardAvoidingView,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
@@ -24,6 +29,7 @@ import {
   hapticSuccess,
   hapticWarning,
   hapticError,
+  hapticLight,
 } from "../../services/haptics";
 
 export default function SettingsScreen() {
@@ -32,8 +38,13 @@ export default function SettingsScreen() {
 
   const [syncQueueSize, setSyncQueueSize] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
-  const [tempApiUrl, setTempApiUrl] = useState(store.apiUrl);
   const [syncing, setSyncing] = useState(false);
+
+  // Local WhatsApp Gateway State
+  const [waLinked, setWaLinked] = useState(false);
+  const [waModalVisible, setWaModalVisible] = useState(false);
+  const [waLinkingProgress, setWaLinkingProgress] = useState(0);
+  const [waLinkingStep, setWaLinkingStep] = useState<"qr" | "loading" | "success">("qr");
 
   // Gemini AI / BYOK State
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -93,14 +104,96 @@ export default function SettingsScreen() {
         setGeminiConnected(true);
       }
     })();
-  }, [store.apiUrl]);
+    // Load local WhatsApp linking status
+    (async () => {
+      const isLinked = await getSecureItem("whatsapp_linked_locally");
+      if (isLinked === "true") {
+        setWaLinked(true);
+      }
+    })();
+  }, []);
 
-  const handleSaveApi = () => {
-    if (!tempApiUrl.trim()) return;
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [hasScanned, setHasScanned] = useState(false);
+
+  const startWaLinking = () => {
     hapticMedium();
-    store.setApiUrl(tempApiUrl.trim());
+    setHasScanned(false);
+    setWaLinkingStep("qr");
+    setWaLinkingProgress(0);
+    setWaModalVisible(true);
+  };
+
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    if (hasScanned) return;
+    setHasScanned(true);
     hapticSuccess();
-    showCustomAlert("Success", "API Endpoint updated successfully.", "success");
+    setWaLinkingStep("loading");
+    setWaLinkingProgress(0.2);
+
+    try {
+      let gatewayUrl = data.trim();
+      if (!gatewayUrl.startsWith("http://") && !gatewayUrl.startsWith("https://")) {
+        try {
+          const parsed = JSON.parse(gatewayUrl);
+          if (parsed.url) {
+            gatewayUrl = parsed.url;
+          }
+        } catch {
+          gatewayUrl = `http://${gatewayUrl}`;
+        }
+      }
+
+      const urlObj = new URL(gatewayUrl);
+      setWaLinkingProgress(0.5);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const response = await fetch(`${urlObj.origin}/status`, {
+        signal: controller.signal
+      }).catch(async () => {
+        return fetch(`${urlObj.origin}/`, { signal: controller.signal });
+      });
+
+      clearTimeout(timeoutId);
+      setWaLinkingProgress(0.8);
+
+      await saveSecureItem("whatsapp_gateway_url", urlObj.origin);
+      await saveSecureItem("whatsapp_linked_locally", "true");
+
+      setWaLinked(true);
+      setWaLinkingProgress(1.0);
+      setWaLinkingStep("success");
+      hapticSuccess();
+
+      await triggerLocalNotification(
+        "WhatsApp Gateway Linked",
+        `Successfully linked to local WhatsApp gateway: ${urlObj.origin}`
+      );
+
+      setTimeout(() => {
+        setWaModalVisible(false);
+      }, 1500);
+
+    } catch (err: any) {
+      console.warn("Connection verification failed:", err);
+      hapticError();
+      setHasScanned(false);
+      setWaLinkingStep("qr");
+      showCustomAlert(
+        "Linking Failed",
+        `Could not verify connection to local gateway. Make sure the server is running on the same network and status endpoint is reachable.`,
+        "error"
+      );
+    }
+  };
+
+  const handleUnlinkWa = async () => {
+    hapticWarning();
+    await saveSecureItem("whatsapp_linked_locally", "false");
+    setWaLinked(false);
+    showCustomAlert("Disconnected", "Local WhatsApp gateway has been unlinked.", "info");
   };
 
   const handleSaveGeminiKey = async () => {
@@ -217,7 +310,11 @@ export default function SettingsScreen() {
         edges={["top"]}
         style={[styles.container, { backgroundColor: colors.bg }]}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView contentContainerStyle={styles.scrollContainer}>
           {/* Header */}
           <View style={styles.headerContainer}>
             <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
@@ -269,7 +366,7 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* API Server Configurations */}
+            {/* Local WhatsApp Gateway Configuration */}
           <View
             style={[
               glassStyle,
@@ -277,29 +374,48 @@ export default function SettingsScreen() {
               { backgroundColor: colors.surface },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              API Connections
-            </Text>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-              Backend Endpoint URL
-            </Text>
-            <View
-              style={{ flexDirection: "row", gap: 12, alignItems: "center" }}
-            >
-              <TextInput
-                value={tempApiUrl}
-                onChangeText={setTempApiUrl}
-                placeholder="https://..."
-                placeholderTextColor={colors.textMuted}
-                style={[glassInputStyle, { flex: 1, height: 40 }]}
-              />
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 8 }}>
+                <View style={[
+                  styles.geminiIcon,
+                  { backgroundColor: waLinked ? colors.successSoft : colors.primarySoft }
+                ]}>
+                  <Ionicons name="logo-whatsapp" size={16} color={waLinked ? colors.success : colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                    Local WhatsApp Gateway
+                  </Text>
+                  <Text style={[styles.rowLabel, {
+                    color: waLinked ? colors.success : colors.textMuted,
+                    fontWeight: "600",
+                    marginTop: 1,
+                  }]}>
+                    {waLinked ? "● Linked & Online" : "○ Disconnected"}
+                  </Text>
+                </View>
+                {waLinked && (
+                  <Pressable
+                    onPress={handleUnlinkWa}
+                    style={[styles.disconnectBtn, { borderColor: colors.danger + "60" }]}
+                  >
+                    <Text style={{ fontSize: 11, color: colors.danger, fontWeight: "700" }}>Unlink</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: 14 }}>
+                Link your local device to scan and automatically dispatch messages in the background without WhatsApp's official API.
+              </Text>
+
+              {!waLinked && (
               <Pressable
-                onPress={handleSaveApi}
-                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                  onPress={startWaLinking}
+                  style={[styles.saveBtn, { backgroundColor: colors.primary, width: "100%", height: 42, borderRadius: 10, flexDirection: "row" }]}
               >
-                <Text style={styles.saveBtnText}>Save</Text>
+                  <Ionicons name="qr-code-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.saveBtnText}>Link Local Device (QR Code)</Text>
               </Pressable>
-            </View>
+              )}
           </View>
 
           {/* Gemini AI Integration */}
@@ -484,6 +600,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
         </ScrollView>
+        </KeyboardAvoidingView>
         <CustomAlert
           visible={alertConfig.visible}
           title={alertConfig.title}
@@ -494,6 +611,131 @@ export default function SettingsScreen() {
             setAlertConfig((prev) => ({ ...prev, visible: false }))
           }
         />
+
+        <Modal
+          transparent
+          visible={waModalVisible}
+          animationType="fade"
+        >
+          <View style={styles.modalOverlay}>
+            <View
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  padding: 24,
+                  alignItems: "center",
+                },
+              ]}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  width: "100%",
+                  marginBottom: 16,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: "bold",
+                    color: colors.text,
+                  }}
+                >
+                  Link WhatsApp Device
+                </Text>
+                <View style={{ flex: 1 }} />
+                <Pressable onPress={() => setWaModalVisible(false)} style={styles.closeBtn}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+
+              {waLinkingStep === "qr" && (
+                <View style={{ alignItems: "center", width: "100%" }}>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center", marginBottom: 20 }}>
+                    Point your camera at the local WhatsApp Gateway QR code (containing your gateway URL) to link the device.
+                  </Text>
+
+                  {!cameraPermission ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 30 }} />
+                  ) : !cameraPermission.granted ? (
+                    <View style={{ alignItems: "center", marginVertical: 20, paddingHorizontal: 10 }}>
+                      <Ionicons name="camera-reverse-outline" size={48} color={colors.primary} style={{ marginBottom: 12 }} />
+                      <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", marginBottom: 16, fontWeight: "600" }}>
+                        Camera permission is required to scan QR codes.
+                      </Text>
+                      <Pressable
+                        onPress={requestCameraPermission}
+                        style={[styles.saveBtn, { backgroundColor: colors.primary, width: "100%", height: 40, borderRadius: 10 }]}
+                      >
+                        <Text style={styles.saveBtnText}>Grant Camera Permission</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <View style={{
+                      width: 250,
+                      height: 250,
+                      borderRadius: 20,
+                      overflow: "hidden",
+                      borderColor: colors.border,
+                      borderWidth: 2,
+                      marginBottom: 20,
+                      position: "relative",
+                      backgroundColor: "#000"
+                    }}>
+                      <CameraView
+                        style={StyleSheet.absoluteFill}
+                        barcodeScannerSettings={{
+                          barcodeTypes: ["qr"],
+                        }}
+                        onBarcodeScanned={handleBarCodeScanned}
+                      />
+                      {/* Scanning Target Box Indicator */}
+                      <View style={{
+                        position: "absolute",
+                        top: "20%",
+                        left: "20%",
+                        width: "60%",
+                        height: "60%",
+                        borderColor: colors.primary,
+                        borderWidth: 2,
+                        borderRadius: 12,
+                        borderStyle: "dashed",
+                      }} />
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {waLinkingStep === "loading" && (
+                <View style={{ alignItems: "center", width: "100%", paddingVertical: 20 }}>
+                  <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 16 }} />
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text, marginBottom: 8 }}>
+                    Connecting local socket gateway...
+                  </Text>
+                  <View style={{ width: "100%", height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: "hidden" }}>
+                    <View style={{ width: `${waLinkingProgress * 100}%`, height: "100%", backgroundColor: colors.primary }} />
+                  </View>
+                </View>
+              )}
+
+              {waLinkingStep === "success" && (
+                <View style={{ alignItems: "center", width: "100%", paddingVertical: 20 }}>
+                  <Ionicons name="checkmark-circle" size={56} color={colors.success} style={{ marginBottom: 16 }} />
+                  <Text style={{ fontSize: 16, fontWeight: "bold", color: colors.text, marginBottom: 4 }}>
+                    WhatsApp Linked Successfully
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    Device is now active for local auto-dispatches.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </Host>
   );
@@ -637,5 +879,20 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 11,
     textAlign: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    padding: 24,
+    borderRadius: 20,
+    width: "100%",
+  },
+  closeBtn: {
+    padding: 4,
   },
 });

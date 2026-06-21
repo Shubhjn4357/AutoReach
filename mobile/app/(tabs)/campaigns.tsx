@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   RefreshControl,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -796,8 +797,12 @@ export default function CampaignsScreen() {
             visible={templateModalVisible}
             animationType="slide"
           >
-            <View style={styles.modalOverlay}>
-              <View
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.modalOverlay}>
+                <View
                 style={[
                   styles.modalCard,
                   {
@@ -891,7 +896,8 @@ export default function CampaignsScreen() {
                 </Pressable>
               </View>
             </View>
-          </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
         )}
 
         {/* Custom Reusable Alert */}

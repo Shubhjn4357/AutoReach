@@ -8,16 +8,73 @@ import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
 import * as Notifications from "expo-notifications";
 import { Host } from "@expo/ui";
-import { initDb } from "../services/db";
+import { initDb, getPendingWhatsAppMessages, updateWhatsAppMessageStatus, logSentMessage } from "../services/db";
 import { bootstrapStore, useAppStore, getSecureItem } from "../services/store";
 import { ThemeProvider, useTheme } from "../services/theme";
 import { registerForPushNotificationsAsync } from "../services/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND_NOTIFICATION_TASK";
+const BACKGROUND_WHATSAPP_QUEUE = "BACKGROUND_WHATSAPP_QUEUE";
 
 // Keep splash screen visible until custom assets are ready
 SplashScreen.preventAutoHideAsync();
+
+TaskManager.defineTask(BACKGROUND_WHATSAPP_QUEUE, async () => {
+  console.log("[Background Task] Running background WhatsApp outbox processor...");
+  try {
+    const isLinked = await getSecureItem("whatsapp_linked_locally");
+    const gatewayUrl = await getSecureItem("whatsapp_gateway_url");
+
+    if (isLinked !== "true" || !gatewayUrl) {
+      console.log("[Background Task] WhatsApp gateway not linked or configured. Skipping.");
+      return BackgroundTask.BackgroundTaskResult.Success;
+    }
+
+    const pendingMessages = await getPendingWhatsAppMessages();
+    if (pendingMessages.length === 0) {
+      console.log("[Background Task] No pending WhatsApp messages found.");
+      return BackgroundTask.BackgroundTaskResult.Success;
+    }
+
+    console.log(`[Background Task] Found ${pendingMessages.length} pending WhatsApp messages.`);
+
+    for (const msg of pendingMessages) {
+      await updateWhatsAppMessageStatus(msg.id, "PROCESSING");
+      try {
+        const cleanPhone = msg.recipientPhone.replace(/[^0-9]/g, "");
+        const response = await fetch(`${gatewayUrl}/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            phone: cleanPhone,
+            message: msg.messageBody,
+          }),
+        });
+
+        if (response.ok) {
+          await updateWhatsAppMessageStatus(msg.id, "SENT");
+          await logSentMessage("whatsapp", msg.recipientPhone, "LOCAL_GATEWAY_AUTO");
+          console.log(`[Background Task] Message to ${msg.recipientPhone} sent successfully.`);
+        } else {
+          const errText = await response.text().catch(() => "Response not OK");
+          await updateWhatsAppMessageStatus(msg.id, "FAILED", errText);
+          console.warn(`[Background Task] Gateway returned error: ${errText}`);
+        }
+      } catch (err: any) {
+        console.error(`[Background Task] Fetch error sending message:`, err);
+        await updateWhatsAppMessageStatus(msg.id, "FAILED", err.message || "Network request failed");
+      }
+    }
+
+    return BackgroundTask.BackgroundTaskResult.Success;
+  } catch (error) {
+    console.error("Background WhatsApp outbox task failed:", error);
+    return BackgroundTask.BackgroundTaskResult.Failed;
+  }
+});
 
 TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async () => {
   console.log("[Background Task] Running background schedule check...");
@@ -72,22 +129,35 @@ function InnerRootLayout() {
         // Register push/local notification settings
         await registerForPushNotificationsAsync();
 
-        // Register background task
+        // Register background tasks
         try {
-          const isRegistered = await TaskManager.isTaskRegisteredAsync(
+          const isNotificationRegistered = await TaskManager.isTaskRegisteredAsync(
             BACKGROUND_NOTIFICATION_TASK,
           );
-          if (!isRegistered) {
+          if (!isNotificationRegistered) {
             await BackgroundTask.registerTaskAsync(
               BACKGROUND_NOTIFICATION_TASK,
               {
                 minimumInterval: 15 * 60,
               },
             );
-            console.log("[Background Task] Registered successfully");
+            console.log("[Background Notification Task] Registered successfully");
+          }
+
+          const isWhatsappRegistered = await TaskManager.isTaskRegisteredAsync(
+            BACKGROUND_WHATSAPP_QUEUE,
+          );
+          if (!isWhatsappRegistered) {
+            await BackgroundTask.registerTaskAsync(
+              BACKGROUND_WHATSAPP_QUEUE,
+              {
+                minimumInterval: 15 * 60,
+              },
+            );
+            console.log("[Background WhatsApp Queue Task] Registered successfully");
           }
         } catch (bgErr) {
-          console.warn("Background task registration failed:", bgErr);
+          console.warn("Background tasks registration failed:", bgErr);
         }
 
         // Perform initial routing check

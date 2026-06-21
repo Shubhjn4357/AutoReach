@@ -24,7 +24,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 try {
   GoogleSignin.configure({
-    webClientId: "625470834164-devclientid.apps.googleusercontent.com", // Replace with your Google OAuth client ID
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
     offlineAccess: true,
   });
 } catch (e) {

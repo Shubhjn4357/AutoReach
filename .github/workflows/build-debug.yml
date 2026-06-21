@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
@@ -54,43 +54,45 @@ jobs:
           cd mobile/android
           ./gradlew assembleDebug
 
-      - name: Build Android Release APK
-        run: |
-          cd mobile/android
-          ./gradlew assembleRelease
-
-      - name: Sign Release APK
+      - name: Decode Keystore
         env:
-          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE }}
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        run: |
+          # Decode the base64 string directly into the android/app folder
+          echo "$KEYSTORE_BASE64" | base64 --decode > mobile/android/app/release.keystore
+
+      - name: Build and Sign Android Release APK
+        env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        if: ${{ env.ANDROID_KEYSTORE != '' }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > mobile/android/app/release.keystore
-          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)
-          $APKSIGNER sign --ks mobile/android/app/release.keystore \
-            --ks-pass pass:"$KEYSTORE_PASSWORD" \
-            --key-pass pass:"$KEY_PASSWORD" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --out mobile/android/app/build/outputs/apk/release/app-release-signed.apk \
-            mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          cd mobile/android
+          
+          # Check if the keystore was successfully created in the previous step
+          if [ -f "app/release.keystore" ]; then
+            echo "Keystore found. Building and signing Release APK..."
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="${{ github.workspace }}/mobile/android/app/release.keystore" \
+              -Pandroid.injected.signing.store.password="${KEYSTORE_PASSWORD}" \
+              -Pandroid.injected.signing.key.alias="${KEY_ALIAS}" \
+              -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
+          else
+            echo "No keystore found. Building unsigned Release APK as fallback..."
+            ./gradlew assembleRelease
+          fi
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AutoReach-Debug-APK
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload Release APK Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: AutoReach-Release-APKs
-          path: |
-            mobile/android/app/build/outputs/apk/release/app-release-signed.apk
-            mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
-            mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: ignore
 
-
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoReach-Release-APK
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

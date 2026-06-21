@@ -11,6 +11,8 @@ import {
   Pressable,
   RefreshControl,
   Platform,
+  KeyboardAvoidingView,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -22,6 +24,8 @@ import {
   logSentMessage,
   getLocalTemplates,
   MessageTemplate,
+  enqueueWhatsAppMessage,
+  updateWhatsAppMessageStatus,
 } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
 import { Lead, LeadStatus } from "../../shared/types";
@@ -31,7 +35,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { triggerLocalNotification } from "../../services/notifications";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Host } from "@expo/ui";
-import * as Contacts from "expo-contacts";
+import {Contact, ContactField, PermissionStatus, requestPermissionsAsync} from "expo-contacts";
 import * as Linking from "expo-linking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "../../hook/useDebounce";
@@ -46,7 +50,6 @@ import {
 
 interface LeadCreateFormData {
   name: string;
-  value: string;
   email: string;
   phone: string;
   status: LeadStatus;
@@ -140,7 +143,6 @@ export default function LeadsScreen() {
   // Create Lead Form
   const [formData, setFormData] = useState<LeadCreateFormData>({
     name: "",
-    value: "",
     email: "",
     phone: "",
     status: "NEW",
@@ -164,11 +166,24 @@ export default function LeadsScreen() {
   const [bulkWizardVisible, setBulkWizardVisible] = useState(false);
   const [currentBulkIndex, setCurrentBulkIndex] = useState(0);
 
+  // Local WhatsApp Gateway & Auto-Pilot States
+  const [waLocalLinked, setWaLocalLinked] = useState(false);
+  const [autoPilotActive, setAutoPilotActive] = useState(false);
+  const [isAutoSending, setIsAutoSending] = useState(false);
+  const isAutoSendingRef = useRef(false);
+
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplateId) {
       setSelectedTemplateId(templates[0].id);
     }
   }, [templates, selectedTemplateId]);
+
+  useEffect(() => {
+    (async () => {
+      const isLinked = await getSecureItem("whatsapp_linked_locally");
+      setWaLocalLinked(isLinked === "true");
+    })();
+  }, [drawerVisible, bulkTemplateModalVisible, bulkWizardVisible]);
 
   const invalidateAll = async () => {
     await Promise.all([
@@ -193,7 +208,7 @@ export default function LeadsScreen() {
   const handleImportDeviceContacts = async () => {
     try {
       showCustomAlert("Syncing Contacts", "Checking permissions...", "info");
-      const { status } = await Contacts.requestPermissionsAsync();
+      const { status } = await requestPermissionsAsync();
       if (status !== "granted") {
         showCustomAlert(
           "Permission Denied",
@@ -203,11 +218,9 @@ export default function LeadsScreen() {
         return;
       }
 
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.Emails, Contacts.Fields.PhoneNumbers],
-      });
+      const ContactList = await Contact.getAllDetails([ContactField.FULL_NAME, ContactField.PHONES, ContactField.EMAILS]);
 
-      if (!data || data.length === 0) {
+      if (!ContactList || ContactList.length === 0) {
         showCustomAlert(
           "No Contacts Found",
           "No contacts fetched from your device.",
@@ -228,14 +241,14 @@ export default function LeadsScreen() {
       );
 
       let importCount = 0;
-      for (const contact of data) {
-        const name =
-          contact.name ||
-          [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+      for (const contact of ContactList) {
+        const name = contact.fullName;
         if (!name) continue;
 
-        const phone = contact.phoneNumbers?.[0]?.number || null;
-        const email = contact.emails?.[0]?.email || null;
+        const phoneObj = contact.phones?.[0] || null;
+        const emailObj = contact.emails?.[0] || null;
+        const phone = phoneObj?.number || null;
+        const email = emailObj?.address || null;
 
         // Skip if no phone number
         if (!phone) continue;
@@ -281,6 +294,81 @@ export default function LeadsScreen() {
         "error",
       );
     }
+  };
+
+  const startAutoPilotLoop = async () => {
+    const selectedLeads = leads.filter((l) => selectedLeadIds.includes(l.id));
+    setIsAutoSending(true);
+    isAutoSendingRef.current = true;
+    setCurrentBulkIndex(0);
+
+    const gatewayUrl = await getSecureItem("whatsapp_gateway_url");
+
+    for (let i = 0; i < selectedLeads.length; i++) {
+      if (!isAutoSendingRef.current) break;
+
+      const currentLead = selectedLeads[i];
+      if (!currentLead.phone) {
+        setCurrentBulkIndex(i + 1);
+        continue;
+      }
+
+      let messageText = customBulkBody;
+      if (selectedTemplateId) {
+        const temp = templates.find((t) => t.id === selectedTemplateId);
+        if (temp) messageText = temp.body;
+      }
+
+      const personalizedMsg = messageText
+        .replace(/\[Name\]/gi, currentLead.name)
+        .replace(/\[Value\]/gi, currentLead.value.toLocaleString());
+
+      // 1. Enqueue in SQLite whatsapp_outbox as PENDING
+      const queueId = await enqueueWhatsAppMessage(currentLead.phone, personalizedMsg);
+
+      // Human sender pacing delay (1.5s)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      if (!isAutoSendingRef.current) break;
+
+      // 2. Dispatch real HTTP POST request to local Gateway URL if linked
+      if (gatewayUrl) {
+        try {
+          await updateWhatsAppMessageStatus(queueId, "PROCESSING");
+          const cleanPhone = currentLead.phone.replace(/[^0-9]/g, "");
+          const response = await fetch(`${gatewayUrl}/send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              phone: cleanPhone,
+              message: personalizedMsg,
+            }),
+          });
+
+          if (response.ok) {
+            await updateWhatsAppMessageStatus(queueId, "SENT");
+            await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_AUTO");
+          } else {
+            const errText = await response.text().catch(() => "Gateway Response Fail");
+            await updateWhatsAppMessageStatus(queueId, "FAILED", errText);
+            await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_FAILED");
+          }
+        } catch (err: any) {
+          console.warn("Foreground gateway send failed:", err);
+          await updateWhatsAppMessageStatus(queueId, "FAILED", err.message || "Network request failed");
+          await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_FAILED");
+        }
+      } else {
+        await updateWhatsAppMessageStatus(queueId, "FAILED", "Gateway URL not configured");
+      }
+
+      setCurrentBulkIndex(i + 1);
+    }
+    setIsAutoSending(false);
+    isAutoSendingRef.current = false;
+    hapticSuccess();
   };
 
   const handleBulkSendNext = async () => {
@@ -390,7 +478,7 @@ export default function LeadsScreen() {
         `${formData.name.toLowerCase().replace(/\s+/g, "")}@example.com`,
       phone: formData.phone.trim() || "+1555019000",
       status: formData.status,
-      value: parseInt(formData.value) || 0,
+      value: 0,
       notes: "Registered locally.",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -399,7 +487,6 @@ export default function LeadsScreen() {
     await createLocalLead(newLead);
     setFormData({
       name: "",
-      value: "",
       email: "",
       phone: "",
       status: "NEW",
@@ -776,8 +863,12 @@ export default function LeadsScreen() {
         {/* Create Contact Drawer Modal */}
         {drawerVisible && (
           <Modal transparent visible={drawerVisible} animationType="none">
-            <View style={styles.drawerOverlay}>
-              <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.drawerOverlay}>
+                <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill}>
                 <Animated.View
                   style={[styles.drawerBackdrop, { opacity: fadeAnim }]}
                 />
@@ -822,17 +913,6 @@ export default function LeadsScreen() {
                     }
                     placeholder="Full Name / Company"
                     placeholderTextColor={colors.textMuted}
-                    style={[glassInputStyle, styles.drawerInput]}
-                  />
-
-                  <TextInput
-                    value={formData.value}
-                    onChangeText={(val) =>
-                      setFormData((prev) => ({ ...prev, value: val }))
-                    }
-                    placeholder="Valuation ($)"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="numeric"
                     style={[glassInputStyle, styles.drawerInput]}
                   />
 
@@ -931,6 +1011,7 @@ export default function LeadsScreen() {
                 </View>
               </Animated.View>
             </View>
+            </KeyboardAvoidingView>
           </Modal>
         )}
 
@@ -941,8 +1022,12 @@ export default function LeadsScreen() {
             visible={profileModalVisible}
             animationType="slide"
           >
-            <View style={styles.modalOverlay}>
-              <View
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.modalOverlay}>
+                <View
                 style={[
                   styles.modalCard,
                   {
@@ -1009,7 +1094,8 @@ export default function LeadsScreen() {
                 </View>
               </View>
             </View>
-          </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
         )}
 
         {/* Bulk Selection Actions Panel */}
@@ -1115,8 +1201,12 @@ export default function LeadsScreen() {
             visible={bulkTemplateModalVisible}
             animationType="slide"
           >
-            <View style={styles.modalOverlay}>
-              <View
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.modalOverlay}>
+                <View
                 style={[
                   styles.modalCard,
                   {
@@ -1243,6 +1333,53 @@ export default function LeadsScreen() {
                   ]}
                 />
 
+                {/* Local Gateway / Auto-Pilot Option */}
+                {bulkChannel === "whatsapp" && (
+                  <View style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: waLocalLinked ? colors.successSoft : colors.primarySoft,
+                    borderColor: waLocalLinked ? colors.success + "30" : colors.primary + "30",
+                    borderWidth: 1.5,
+                    marginBottom: 16,
+                    gap: 10
+                  }}>
+                    <Ionicons 
+                      name={waLocalLinked ? "logo-whatsapp" : "warning-outline"} 
+                      size={18} 
+                      color={waLocalLinked ? colors.success : colors.primary} 
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: "bold", color: colors.text }}>
+                        Local WhatsApp Linked
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                        {waLocalLinked 
+                          ? "Auto-Pilot background sending is available." 
+                          : "Configure device linking in Settings for Auto-Pilot."}
+                      </Text>
+                    </View>
+                    {waLocalLinked && (
+                      <Pressable 
+                        onPress={() => { hapticLight(); setAutoPilotActive(!autoPilotActive); }}
+                        style={{
+                          width: 44,
+                          height: 24,
+                          borderRadius: 12,
+                          backgroundColor: autoPilotActive ? colors.success : colors.border,
+                          padding: 2,
+                          justifyContent: "center",
+                          alignItems: autoPilotActive ? "flex-end" : "flex-start",
+                        }}
+                      >
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#FFFFFF" }} />
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+
                 <Pressable
                   onPress={() => {
                     const selectedLeadsCount = leads.filter((l) =>
@@ -1266,6 +1403,9 @@ export default function LeadsScreen() {
                     setBulkTemplateModalVisible(false);
                     setCurrentBulkIndex(0);
                     setBulkWizardVisible(true);
+                    if (autoPilotActive && bulkChannel === "whatsapp" && waLocalLinked) {
+                      startAutoPilotLoop();
+                    }
                   }}
                   style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 >
@@ -1280,8 +1420,9 @@ export default function LeadsScreen() {
                     recipients)
                   </Text>
                 </Pressable>
+                </View>
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
         )}
 
@@ -1370,6 +1511,36 @@ export default function LeadsScreen() {
                   const personalizedMsg = messageText
                     .replace(/\[Name\]/gi, lead.name)
                     .replace(/\[Value\]/gi, lead.value.toLocaleString());
+
+                  if (autoPilotActive && bulkChannel === "whatsapp" && waLocalLinked && isAutoSending) {
+                    return (
+                      <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                        <ActivityIndicator size="large" color={colors.success} style={{ marginBottom: 16 }} />
+                        <Text style={{ fontSize: 16, fontWeight: "bold", color: colors.text, marginBottom: 8 }}>
+                          Auto-Pilot Dispatching...
+                        </Text>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 16, textAlign: "center" }}>
+                          Sending to {lead.name} ({lead.phone}) via local gateway
+                        </Text>
+                        <View style={{ width: "100%", height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: "hidden", marginBottom: 24 }}>
+                          <View style={{ width: `${((currentBulkIndex + 1) / selectedLeads.length) * 100}%`, height: "100%", backgroundColor: colors.success }} />
+                        </View>
+                        <Pressable
+                          onPress={() => {
+                            hapticHeavy();
+                            isAutoSendingRef.current = false;
+                            setIsAutoSending(false);
+                            setBulkWizardVisible(false);
+                            setIsBulkMode(false);
+                            setSelectedLeadIds([]);
+                          }}
+                          style={[styles.modalCancelBtn, { borderColor: colors.danger, borderWidth: 1.5, width: "100%", height: 40 }]}
+                        >
+                          <Text style={{ color: colors.danger, fontWeight: "bold" }}>Cancel / Stop Campaign</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  }
 
                   return (
                     <View>
@@ -1665,7 +1836,7 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 96,
+    bottom: 116,
     width: 60,
     height: 60,
     borderRadius: 30,

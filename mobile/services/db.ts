@@ -161,6 +161,19 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
+  // WhatsApp Queue/Outbox Table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS whatsapp_outbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient_phone TEXT NOT NULL,
+      message_body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      error_message TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   console.log("Local SQLite tables initialized.");
 }
 
@@ -486,4 +499,67 @@ export async function createLocalTemplate(
 export async function deleteLocalTemplate(id: string) {
   const db = await getDb();
   await db.runAsync("DELETE FROM message_templates WHERE id = ?", [id]);
+}
+
+export interface QueuedMessage {
+  id: number;
+  recipientPhone: string;
+  messageBody: string;
+  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+  errorMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function enqueueWhatsAppMessage(phone: string, body: string): Promise<number> {
+  const db = await getDb();
+  const now = Date.now();
+  const result = await db.runAsync(
+    `INSERT INTO whatsapp_outbox (recipient_phone, message_body, status, created_at, updated_at)
+     VALUES (?, ?, 'PENDING', ?, ?)`,
+    [phone, body, now, now]
+  );
+  return result.lastInsertRowId;
+}
+
+export async function getPendingWhatsAppMessages(): Promise<QueuedMessage[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    id: number;
+    recipient_phone: string;
+    message_body: string;
+    status: string;
+    error_message: string | null;
+    created_at: number;
+    updated_at: number;
+  }>("SELECT * FROM whatsapp_outbox WHERE status = 'PENDING' ORDER BY created_at ASC");
+  return rows.map((r) => ({
+    id: r.id,
+    recipientPhone: r.recipient_phone,
+    messageBody: r.message_body,
+    status: r.status as QueuedMessage["status"],
+    errorMessage: r.error_message,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function updateWhatsAppMessageStatus(
+  id: number,
+  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED',
+  error?: string
+) {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE whatsapp_outbox SET status = ?, error_message = ?, updated_at = ? WHERE id = ?`,
+    [status, error || null, Date.now(), id]
+  );
+}
+
+export async function getWhatsAppQueueSize(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM whatsapp_outbox WHERE status = 'PENDING'"
+  );
+  return row?.count || 0;
 }
