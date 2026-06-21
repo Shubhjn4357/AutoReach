@@ -85,6 +85,51 @@ export function LeadCardSkeleton() {
   );
 }
 
+export function ContactDetailSkeleton() {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flex: 1, padding: 16, gap: 16 }}>
+      {/* Profile Card Skeleton */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.row, { justifyContent: "flex-start", gap: 12, marginBottom: 16 }]}>
+          <SkeletonPulse width={48} height={48} style={{ borderRadius: 24 }} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <SkeletonPulse width="55%" height={18} />
+            <SkeletonPulse width="35%" height={12} />
+          </View>
+          <SkeletonPulse width={60} height={20} style={{ borderRadius: 10 }} />
+        </View>
+        <View style={[styles.box, { backgroundColor: colors.bg, borderColor: colors.border, gap: 12, paddingVertical: 14 }]}>
+          <View style={[styles.row, { marginBottom: 8 }]}>
+            <SkeletonPulse width="15%" height={12} />
+            <SkeletonPulse width="50%" height={12} />
+          </View>
+          <View style={[styles.row, { marginBottom: 8 }]}>
+            <SkeletonPulse width="15%" height={12} />
+            <SkeletonPulse width="50%" height={12} />
+          </View>
+          <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 6 }}>
+            <SkeletonPulse width="25%" height={10} style={{ marginBottom: 4 }} />
+            <SkeletonPulse width="75%" height={14} />
+          </View>
+        </View>
+      </View>
+
+      {/* AI CRM Auditor Skeleton */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.row, { marginBottom: 16 }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+            <SkeletonPulse width={20} height={20} style={{ borderRadius: 10 }} />
+            <SkeletonPulse width="40%" height={16} />
+          </View>
+          <SkeletonPulse width={80} height={32} style={{ borderRadius: 8 }} />
+        </View>
+        <SkeletonPulse width="100%" height={40} style={{ borderRadius: 10 }} />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   skeleton: {
     borderRadius: 8,

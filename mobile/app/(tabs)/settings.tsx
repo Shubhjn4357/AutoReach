@@ -11,7 +11,6 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
@@ -22,7 +21,9 @@ import { triggerLocalNotification } from "../../services/notifications";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
-import { Host } from "@expo/ui";
+import { Host, Switch } from "@expo/ui";
+import * as LocalAuthentication from "expo-local-authentication";
+import { APP_CONSTANTS } from "../../constant";
 import {
   hapticMedium,
   hapticHeavy,
@@ -40,11 +41,11 @@ export default function SettingsScreen() {
   const [totalLeads, setTotalLeads] = useState(0);
   const [syncing, setSyncing] = useState(false);
 
+  // Biometrics Lock Preference
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
   // Local WhatsApp Gateway State
   const [waLinked, setWaLinked] = useState(false);
-  const [waModalVisible, setWaModalVisible] = useState(false);
-  const [waLinkingProgress, setWaLinkingProgress] = useState(0);
-  const [waLinkingStep, setWaLinkingStep] = useState<"qr" | "loading" | "success">("qr");
 
   // Gemini AI / BYOK State
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -111,82 +112,23 @@ export default function SettingsScreen() {
         setWaLinked(true);
       }
     })();
+    // Load biometric lock status
+    (async () => {
+      const enabled = await getSecureItem("biometric_lock_enabled");
+      setBiometricsEnabled(enabled === "true");
+    })();
   }, []);
 
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [hasScanned, setHasScanned] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const isLinked = await getSecureItem("whatsapp_linked_locally");
+      setWaLinked(isLinked === "true");
+    })();
+  }, [store.showWaWeb, store.waWebStep]);
 
   const startWaLinking = () => {
     hapticMedium();
-    setHasScanned(false);
-    setWaLinkingStep("qr");
-    setWaLinkingProgress(0);
-    setWaModalVisible(true);
-  };
-
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    if (hasScanned) return;
-    setHasScanned(true);
-    hapticSuccess();
-    setWaLinkingStep("loading");
-    setWaLinkingProgress(0.2);
-
-    try {
-      let gatewayUrl = data.trim();
-      if (!gatewayUrl.startsWith("http://") && !gatewayUrl.startsWith("https://")) {
-        try {
-          const parsed = JSON.parse(gatewayUrl);
-          if (parsed.url) {
-            gatewayUrl = parsed.url;
-          }
-        } catch {
-          gatewayUrl = `http://${gatewayUrl}`;
-        }
-      }
-
-      const urlObj = new URL(gatewayUrl);
-      setWaLinkingProgress(0.5);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      const response = await fetch(`${urlObj.origin}/status`, {
-        signal: controller.signal
-      }).catch(async () => {
-        return fetch(`${urlObj.origin}/`, { signal: controller.signal });
-      });
-
-      clearTimeout(timeoutId);
-      setWaLinkingProgress(0.8);
-
-      await saveSecureItem("whatsapp_gateway_url", urlObj.origin);
-      await saveSecureItem("whatsapp_linked_locally", "true");
-
-      setWaLinked(true);
-      setWaLinkingProgress(1.0);
-      setWaLinkingStep("success");
-      hapticSuccess();
-
-      await triggerLocalNotification(
-        "WhatsApp Gateway Linked",
-        `Successfully linked to local WhatsApp gateway: ${urlObj.origin}`
-      );
-
-      setTimeout(() => {
-        setWaModalVisible(false);
-      }, 1500);
-
-    } catch (err: any) {
-      console.warn("Connection verification failed:", err);
-      hapticError();
-      setHasScanned(false);
-      setWaLinkingStep("qr");
-      showCustomAlert(
-        "Linking Failed",
-        `Could not verify connection to local gateway. Make sure the server is running on the same network and status endpoint is reachable.`,
-        "error"
-      );
-    }
+    store.setWaWebVisible(true);
   };
 
   const handleUnlinkWa = async () => {
@@ -194,6 +136,75 @@ export default function SettingsScreen() {
     await saveSecureItem("whatsapp_linked_locally", "false");
     setWaLinked(false);
     showCustomAlert("Disconnected", "Local WhatsApp gateway has been unlinked.", "info");
+  };
+
+  const handleToggleBiometrics = async (value: boolean) => {
+    hapticMedium();
+    if (value) {
+      try {
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        if (!hasHardware) {
+          hapticError();
+          showCustomAlert(
+            "Unsupported",
+            "This device does not support biometric authentication.",
+            "error"
+          );
+          return;
+        }
+
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        if (!isEnrolled) {
+          hapticWarning();
+          showCustomAlert(
+            "Not Enrolled",
+            "Please register FaceID/TouchID in your device settings first.",
+            "warning"
+          );
+          return;
+        }
+
+        // Test biometric authentication before enabling
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Verify biometrics to enable lock",
+          disableDeviceFallback: false,
+        });
+
+        if (result.success) {
+          await saveSecureItem("biometric_lock_enabled", "true");
+          setBiometricsEnabled(true);
+          hapticSuccess();
+          showCustomAlert(
+            "Enabled",
+            "Biometric lock has been enabled. The app will lock when closed or sent to the background.",
+            "success"
+          );
+        }
+      } catch (err) {
+        console.warn("Enable biometrics failed", err);
+      }
+    } else {
+      // Prompt user to verify biometrics once to turn it off
+      try {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Verify biometrics to disable lock",
+          disableDeviceFallback: false,
+        });
+
+        if (result.success) {
+          await saveSecureItem("biometric_lock_enabled", "false");
+          setBiometricsEnabled(false);
+          hapticSuccess();
+          showCustomAlert(
+            "Disabled",
+            "Biometric lock has been disabled.",
+            "info"
+          );
+        }
+      } catch (err) {
+        console.warn("Disable biometrics failed", err);
+      }
+    }
   };
 
   const handleSaveGeminiKey = async () => {
@@ -317,9 +328,9 @@ export default function SettingsScreen() {
           <ScrollView contentContainerStyle={styles.scrollContainer}>
           {/* Header */}
           <View style={styles.headerContainer}>
-            <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+            <Text style={[styles.title, { color: colors.text }]}>{APP_CONSTANTS.settings.title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Configure your workspace endpoints and offline caches
+              {APP_CONSTANTS.settings.subtitle}
             </Text>
           </View>
 
@@ -366,7 +377,36 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-            {/* Local WhatsApp Gateway Configuration */}
+          {/* Security & Authentication */}
+          <View
+            style={[
+              glassStyle,
+              styles.sectionCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={[styles.geminiIcon, { backgroundColor: colors.primarySoft }]}>
+                  <Ionicons name="finger-print-outline" size={16} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                    Biometric Lock
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                    Require FaceID / TouchID to open app
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={biometricsEnabled}
+                onValueChange={handleToggleBiometrics}
+              />
+            </View>
+          </View>
+
+          {/* Local WhatsApp Gateway Configuration */}
           <View
             style={[
               glassStyle,
@@ -596,7 +636,7 @@ export default function SettingsScreen() {
 
           <View style={styles.footerContainer}>
             <Text style={[styles.footerText, { color: colors.textMuted }]}>
-              AutoReach Client Build v1.0.0 (Production-Level Engine)
+              {APP_CONSTANTS.settings.versionBanner}
             </Text>
           </View>
         </ScrollView>
@@ -611,131 +651,6 @@ export default function SettingsScreen() {
             setAlertConfig((prev) => ({ ...prev, visible: false }))
           }
         />
-
-        <Modal
-          transparent
-          visible={waModalVisible}
-          animationType="fade"
-        >
-          <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalCard,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                  padding: 24,
-                  alignItems: "center",
-                },
-              ]}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  width: "100%",
-                  marginBottom: 16,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: "bold",
-                    color: colors.text,
-                  }}
-                >
-                  Link WhatsApp Device
-                </Text>
-                <View style={{ flex: 1 }} />
-                <Pressable onPress={() => setWaModalVisible(false)} style={styles.closeBtn}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </Pressable>
-              </View>
-
-              {waLinkingStep === "qr" && (
-                <View style={{ alignItems: "center", width: "100%" }}>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center", marginBottom: 20 }}>
-                    Point your camera at the local WhatsApp Gateway QR code (containing your gateway URL) to link the device.
-                  </Text>
-
-                  {!cameraPermission ? (
-                    <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 30 }} />
-                  ) : !cameraPermission.granted ? (
-                    <View style={{ alignItems: "center", marginVertical: 20, paddingHorizontal: 10 }}>
-                      <Ionicons name="camera-reverse-outline" size={48} color={colors.primary} style={{ marginBottom: 12 }} />
-                      <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", marginBottom: 16, fontWeight: "600" }}>
-                        Camera permission is required to scan QR codes.
-                      </Text>
-                      <Pressable
-                        onPress={requestCameraPermission}
-                        style={[styles.saveBtn, { backgroundColor: colors.primary, width: "100%", height: 40, borderRadius: 10 }]}
-                      >
-                        <Text style={styles.saveBtnText}>Grant Camera Permission</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <View style={{
-                      width: 250,
-                      height: 250,
-                      borderRadius: 20,
-                      overflow: "hidden",
-                      borderColor: colors.border,
-                      borderWidth: 2,
-                      marginBottom: 20,
-                      position: "relative",
-                      backgroundColor: "#000"
-                    }}>
-                      <CameraView
-                        style={StyleSheet.absoluteFill}
-                        barcodeScannerSettings={{
-                          barcodeTypes: ["qr"],
-                        }}
-                        onBarcodeScanned={handleBarCodeScanned}
-                      />
-                      {/* Scanning Target Box Indicator */}
-                      <View style={{
-                        position: "absolute",
-                        top: "20%",
-                        left: "20%",
-                        width: "60%",
-                        height: "60%",
-                        borderColor: colors.primary,
-                        borderWidth: 2,
-                        borderRadius: 12,
-                        borderStyle: "dashed",
-                      }} />
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {waLinkingStep === "loading" && (
-                <View style={{ alignItems: "center", width: "100%", paddingVertical: 20 }}>
-                  <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 16 }} />
-                  <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text, marginBottom: 8 }}>
-                    Connecting local socket gateway...
-                  </Text>
-                  <View style={{ width: "100%", height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: "hidden" }}>
-                    <View style={{ width: `${waLinkingProgress * 100}%`, height: "100%", backgroundColor: colors.primary }} />
-                  </View>
-                </View>
-              )}
-
-              {waLinkingStep === "success" && (
-                <View style={{ alignItems: "center", width: "100%", paddingVertical: 20 }}>
-                  <Ionicons name="checkmark-circle" size={56} color={colors.success} style={{ marginBottom: 16 }} />
-                  <Text style={{ fontSize: 16, fontWeight: "bold", color: colors.text, marginBottom: 4 }}>
-                    WhatsApp Linked Successfully
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                    Device is now active for local auto-dispatches.
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </Modal>
       </SafeAreaView>
     </Host>
   );

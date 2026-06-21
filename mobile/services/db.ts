@@ -1,5 +1,8 @@
 import * as SQLite from "expo-sqlite";
+import { drizzle } from "drizzle-orm/expo-sqlite";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { Lead, Task, SyncOperation } from "../../shared/types";
+import * as schema from "./schema";
 
 export interface DriveFile {
   id: string;
@@ -13,59 +16,46 @@ export interface DriveFile {
   createdAt: number;
 }
 
-interface RawSqlLead {
+export interface MessageTemplate {
   id: string;
-  user_id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  status: string;
-  value: number;
-  notes: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-interface RawSqlTask {
-  id: string;
-  user_id: string | null;
-  lead_id: string | null;
   title: string;
-  description: string | null;
-  status: "PENDING" | "COMPLETED";
-  due_date: number | null;
-  created_at: number;
+  body: string;
+  createdAt: number;
 }
 
-interface RawSqlDriveFile {
-  id: string;
-  user_id: string | null;
-  lead_id: string | null;
-  file_id: string;
-  name: string;
-  mime_type: string;
-  size: number;
-  web_view_link: string | null;
-  created_at: number;
-}
-
-interface RawSqlSyncQueue {
+export interface QueuedMessage {
   id: number;
-  table: "leads" | "tasks";
-  operation: "CREATE" | "UPDATE" | "DELETE";
-  record_id: string;
-  payload: string;
-  created_at: number;
-  attempts: number;
+  recipientPhone: string;
+  messageBody: string;
+  mediaUri: string | null;
+  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
+  errorMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MessageStats {
+  totalSent: number;
+  whatsappCount: number;
+  smsCount: number;
 }
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
+let drizzleDb: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export async function getDb() {
   if (!dbInstance) {
     dbInstance = await SQLite.openDatabaseAsync("autoreach.db");
   }
   return dbInstance;
+}
+
+export function getDrizzle() {
+  if (!drizzleDb) {
+    const sqlite = SQLite.openDatabaseSync("autoreach.db");
+    drizzleDb = drizzle(sqlite, { schema });
+  }
+  return drizzleDb;
 }
 
 export async function initDb(db?: SQLite.SQLiteDatabase) {
@@ -127,7 +117,6 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
-  // Ensure sync_queue table has attempts column
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sync_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +129,6 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
-  // Sent Messages Tracking Table
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sent_messages_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +139,6 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
-  // Pre-configured Message Templates Table
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS message_templates (
       id TEXT PRIMARY KEY,
@@ -161,12 +148,12 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
-  // WhatsApp Queue/Outbox Table
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS whatsapp_outbox (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       recipient_phone TEXT NOT NULL,
       message_body TEXT NOT NULL,
+      media_uri TEXT,
       status TEXT NOT NULL DEFAULT 'PENDING',
       error_message TEXT,
       created_at INTEGER NOT NULL,
@@ -174,46 +161,67 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
     );
   `);
 
+  try {
+    await db.execAsync("ALTER TABLE whatsapp_outbox ADD COLUMN media_uri TEXT;");
+  } catch (err) {
+    // Column already exists
+  }
+
   console.log("Local SQLite tables initialized.");
 }
 
+// Leads Helpers
 export async function getLocalLeads(): Promise<Lead[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlLead>(
-    "SELECT * FROM leads ORDER BY created_at DESC",
-  );
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.leads).orderBy(desc(schema.leads.createdAt));
   return rows.map((r) => ({
     id: r.id,
-    userId: r.user_id,
+    userId: r.userId,
     name: r.name,
     email: r.email,
     phone: r.phone,
     status: r.status as Lead["status"],
     value: r.value,
     notes: r.notes,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   }));
 }
 
+export async function getLocalLead(id: string): Promise<Lead | null> {
+  if (!id) return null;
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.leads).where(eq(schema.leads.id, id)).limit(1);
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    userId: r.userId,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    status: r.status as Lead["status"],
+    value: r.value,
+    notes: r.notes,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
 export async function createLocalLead(lead: Lead) {
-  const db = await getDb();
-  await db.runAsync(
-    `INSERT INTO leads (id, user_id, name, email, phone, status, value, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      lead.id,
-      lead.userId,
-      lead.name,
-      lead.email,
-      lead.phone,
-      lead.status,
-      lead.value,
-      lead.notes,
-      typeof lead.createdAt === "number" ? lead.createdAt : Date.now(),
-      typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now(),
-    ],
-  );
+  const db = getDrizzle();
+  await db.insert(schema.leads).values({
+    id: lead.id,
+    userId: lead.userId,
+    name: lead.name,
+    email: lead.email,
+    phone: lead.phone,
+    status: lead.status,
+    value: lead.value,
+    notes: lead.notes,
+    createdAt: typeof lead.createdAt === "number" ? lead.createdAt : Date.now(),
+    updatedAt: typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now(),
+  });
 
   await enqueueSyncOperation(
     "leads",
@@ -224,20 +232,19 @@ export async function createLocalLead(lead: Lead) {
 }
 
 export async function updateLocalLead(lead: Lead) {
-  const db = await getDb();
-  await db.runAsync(
-    `UPDATE leads SET name = ?, email = ?, phone = ?, status = ?, value = ?, notes = ?, updated_at = ? WHERE id = ?`,
-    [
-      lead.name,
-      lead.email,
-      lead.phone,
-      lead.status,
-      lead.value,
-      lead.notes,
-      Date.now(),
-      lead.id,
-    ],
-  );
+  const db = getDrizzle();
+  await db.update(schema.leads)
+    .set({
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      status: lead.status,
+      value: lead.value,
+      notes: lead.notes,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.leads.id, lead.id));
+
   await enqueueSyncOperation(
     "leads",
     "UPDATE",
@@ -247,31 +254,29 @@ export async function updateLocalLead(lead: Lead) {
 }
 
 export async function deleteLocalLead(id: string) {
-  const db = await getDb();
-  await db.runAsync(`DELETE FROM leads WHERE id = ?`, [id]);
+  const db = getDrizzle();
+  await db.delete(schema.leads).where(eq(schema.leads.id, id));
   await enqueueSyncOperation("leads", "DELETE", id, { id });
 }
 
 // Tasks Helpers
 export async function getLocalTasks(): Promise<Task[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlTask>(
-    "SELECT * FROM tasks ORDER BY created_at DESC",
-  );
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.tasks).orderBy(desc(schema.tasks.createdAt));
   return rows.map((r) => ({
     id: r.id,
-    userId: r.user_id,
-    leadId: r.lead_id,
+    userId: r.userId,
+    leadId: r.leadId,
     title: r.title,
     description: r.description,
     status: r.status as Task["status"],
-    dueDate: r.due_date,
-    createdAt: r.created_at,
+    dueDate: r.dueDate,
+    createdAt: r.createdAt,
   }));
 }
 
 export async function createLocalTask(task: Task) {
-  const db = await getDb();
+  const db = getDrizzle();
   const bindDueDate =
     task.dueDate instanceof Date
       ? task.dueDate.getTime()
@@ -286,20 +291,17 @@ export async function createLocalTask(task: Task) {
         ? new Date(task.createdAt).getTime()
         : task.createdAt || Date.now();
 
-  await db.runAsync(
-    `INSERT INTO tasks (id, user_id, lead_id, title, description, status, due_date, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      task.id,
-      task.userId,
-      task.leadId,
-      task.title,
-      task.description,
-      task.status || "PENDING",
-      bindDueDate,
-      bindCreatedAt,
-    ],
-  );
+  await db.insert(schema.tasks).values({
+    id: task.id,
+    userId: task.userId,
+    leadId: task.leadId,
+    title: task.title,
+    description: task.description,
+    status: task.status || "PENDING",
+    dueDate: bindDueDate,
+    createdAt: bindCreatedAt,
+  });
+
   await enqueueSyncOperation(
     "tasks",
     "CREATE",
@@ -312,69 +314,63 @@ export async function updateLocalTaskStatus(
   id: string,
   status: "PENDING" | "COMPLETED",
 ) {
-  const db = await getDb();
-  await db.runAsync(`UPDATE tasks SET status = ? WHERE id = ?`, [status, id]);
+  const db = getDrizzle();
+  await db.update(schema.tasks)
+    .set({ status })
+    .where(eq(schema.tasks.id, id));
 
-  const task = await db.getFirstAsync<RawSqlTask>(
-    `SELECT * FROM tasks WHERE id = ?`,
-    [id],
-  );
+  const rows = await db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).limit(1);
+  const task = rows[0];
   if (task) {
     await enqueueSyncOperation("tasks", "UPDATE", id, {
       id: task.id,
-      userId: task.user_id,
-      leadId: task.lead_id,
+      userId: task.userId,
+      leadId: task.leadId,
       title: task.title,
       description: task.description,
       status: status,
-      dueDate: task.due_date,
-      createdAt: task.created_at,
+      dueDate: task.dueDate,
+      createdAt: task.createdAt,
     } as unknown as Record<string, unknown>);
   }
 }
 
 export async function deleteLocalTask(id: string) {
-  const db = await getDb();
-  await db.runAsync(`DELETE FROM tasks WHERE id = ?`, [id]);
+  const db = getDrizzle();
+  await db.delete(schema.tasks).where(eq(schema.tasks.id, id));
   await enqueueSyncOperation("tasks", "DELETE", id, { id });
 }
 
 // Drive Files Helpers
 export async function getLocalDriveFiles(): Promise<DriveFile[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlDriveFile>(
-    "SELECT * FROM drive_files ORDER BY created_at DESC",
-  );
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.driveFiles).orderBy(desc(schema.driveFiles.createdAt));
   return rows.map((r) => ({
     id: r.id,
-    userId: r.user_id,
-    leadId: r.lead_id,
-    fileId: r.file_id,
+    userId: r.userId,
+    leadId: r.leadId,
+    fileId: r.fileId,
     name: r.name,
-    mimeType: r.mime_type,
+    mimeType: r.mimeType,
     size: r.size,
-    webViewLink: r.web_view_link,
-    createdAt: r.created_at,
+    webViewLink: r.webViewLink,
+    createdAt: r.createdAt,
   }));
 }
 
 export async function createLocalDriveFile(file: DriveFile) {
-  const db = await getDb();
-  await db.runAsync(
-    `INSERT INTO drive_files (id, user_id, lead_id, file_id, name, mime_type, size, web_view_link, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      file.id,
-      file.userId,
-      file.leadId,
-      file.fileId,
-      file.name,
-      file.mimeType,
-      file.size,
-      file.webViewLink || null,
-      file.createdAt || Date.now(),
-    ],
-  );
+  const db = getDrizzle();
+  await db.insert(schema.driveFiles).values({
+    id: file.id,
+    userId: file.userId,
+    leadId: file.leadId,
+    fileId: file.fileId,
+    name: file.name,
+    mimeType: file.mimeType,
+    size: file.size,
+    webViewLink: file.webViewLink || null,
+    createdAt: file.createdAt || Date.now(),
+  });
 }
 
 // Sync Queue Helpers
@@ -384,42 +380,42 @@ export async function enqueueSyncOperation(
   recordId: string,
   payload: Record<string, unknown>,
 ) {
-  const db = await getDb();
-  await db.runAsync(
-    `INSERT INTO sync_queue ("table", operation, record_id, payload, created_at, attempts)
-     VALUES (?, ?, ?, ?, ?, 0)`,
-    [table, operation, recordId, JSON.stringify(payload), Date.now()],
-  );
+  const db = getDrizzle();
+  await db.insert(schema.syncQueue).values({
+    table,
+    operation,
+    recordId,
+    payload: JSON.stringify(payload),
+    createdAt: Date.now(),
+    attempts: 0,
+  });
   console.log(`Enqueued sync operation: ${operation} on ${table}`);
 }
 
 export async function getQueuedOperations(): Promise<SyncOperation[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<RawSqlSyncQueue>(
-    "SELECT * FROM sync_queue ORDER BY id ASC",
-  );
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.syncQueue).orderBy(schema.syncQueue.id);
   return rows.map((r) => ({
     id: r.id,
-    table: r.table,
-    operation: r.operation,
-    recordId: r.record_id,
+    table: r.table as SyncOperation["table"],
+    operation: r.operation as SyncOperation["operation"],
+    recordId: r.recordId,
     payload: r.payload,
-    createdAt: r.created_at,
-    attempts: r.attempts || 0,
+    createdAt: r.createdAt,
+    attempts: r.attempts,
   }));
 }
 
 export async function incrementSyncAttempt(id: number) {
-  const db = await getDb();
-  await db.runAsync(
-    "UPDATE sync_queue SET attempts = attempts + 1 WHERE id = ?",
-    [id],
-  );
+  const db = getDrizzle();
+  await db.update(schema.syncQueue)
+    .set({ attempts: sql`${schema.syncQueue.attempts} + 1` })
+    .where(eq(schema.syncQueue.id, id));
 }
 
 export async function dequeueSyncOperation(id: number) {
-  const db = await getDb();
-  await db.runAsync("DELETE FROM sync_queue WHERE id = ?", [id]);
+  const db = getDrizzle();
+  await db.delete(schema.syncQueue).where(eq(schema.syncQueue.id, id));
 }
 
 // Log Sent Message
@@ -428,59 +424,37 @@ export async function logSentMessage(
   phone: string,
   status: string,
 ) {
-  const db = await getDb();
-  await db.runAsync(
-    `INSERT INTO sent_messages_log (channel, recipient_phone, status, timestamp) VALUES (?, ?, ?, ?)`,
-    [channel, phone, status, Date.now()],
-  );
-}
-
-// Get Message Stats
-export interface MessageStats {
-  totalSent: number;
-  whatsappCount: number;
-  smsCount: number;
+  const db = getDrizzle();
+  await db.insert(schema.sentMessagesLog).values({
+    channel,
+    recipientPhone: phone,
+    status,
+    timestamp: Date.now(),
+  });
 }
 
 export async function getSentMessageStats(): Promise<MessageStats> {
-  const db = await getDb();
-  const totalRow = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM sent_messages_log",
-  );
-  const waRow = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM sent_messages_log WHERE channel = 'whatsapp'",
-  );
-  const smsRow = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM sent_messages_log WHERE channel = 'sms'",
-  );
+  const db = getDrizzle();
+  const totalRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog);
+  const waRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'whatsapp'));
+  const smsRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'sms'));
+  
   return {
-    totalSent: totalRow?.count || 0,
-    whatsappCount: waRow?.count || 0,
-    smsCount: smsRow?.count || 0,
+    totalSent: totalRow[0]?.count || 0,
+    whatsappCount: waRow[0]?.count || 0,
+    smsCount: smsRow[0]?.count || 0,
   };
 }
 
 // Templates Helpers
-export interface MessageTemplate {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: number;
-}
-
 export async function getLocalTemplates(): Promise<MessageTemplate[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{
-    id: string;
-    title: string;
-    body: string;
-    created_at: number;
-  }>("SELECT * FROM message_templates ORDER BY created_at DESC");
+  const db = getDrizzle();
+  const rows = await db.select().from(schema.messageTemplates).orderBy(desc(schema.messageTemplates.createdAt));
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
     body: r.body,
-    createdAt: r.created_at,
+    createdAt: r.createdAt,
   }));
 }
 
@@ -489,58 +463,58 @@ export async function createLocalTemplate(
   title: string,
   body: string,
 ) {
-  const db = await getDb();
-  await db.runAsync(
-    "INSERT OR REPLACE INTO message_templates (id, title, body, created_at) VALUES (?, ?, ?, ?)",
-    [id, title, body, Date.now()],
-  );
+  const db = getDrizzle();
+  await db.insert(schema.messageTemplates)
+    .values({
+      id,
+      title,
+      body,
+      createdAt: Date.now(),
+    })
+    .onConflictDoUpdate({
+      target: schema.messageTemplates.id,
+      set: {
+        title,
+        body,
+        createdAt: Date.now(),
+      },
+    });
 }
 
 export async function deleteLocalTemplate(id: string) {
-  const db = await getDb();
-  await db.runAsync("DELETE FROM message_templates WHERE id = ?", [id]);
+  const db = getDrizzle();
+  await db.delete(schema.messageTemplates).where(eq(schema.messageTemplates.id, id));
 }
 
-export interface QueuedMessage {
-  id: number;
-  recipientPhone: string;
-  messageBody: string;
-  status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED';
-  errorMessage: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export async function enqueueWhatsAppMessage(phone: string, body: string): Promise<number> {
-  const db = await getDb();
+export async function enqueueWhatsAppMessage(phone: string, body: string, mediaUri?: string): Promise<number> {
+  const db = getDrizzle();
   const now = Date.now();
-  const result = await db.runAsync(
-    `INSERT INTO whatsapp_outbox (recipient_phone, message_body, status, created_at, updated_at)
-     VALUES (?, ?, 'PENDING', ?, ?)`,
-    [phone, body, now, now]
-  );
-  return result.lastInsertRowId;
+  const result = await db.insert(schema.whatsappOutbox).values({
+    recipientPhone: phone,
+    messageBody: body,
+    mediaUri: mediaUri || null,
+    status: 'PENDING',
+    createdAt: now,
+    updatedAt: now,
+  });
+  return (result as any).lastInsertRowId;
 }
 
 export async function getPendingWhatsAppMessages(): Promise<QueuedMessage[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{
-    id: number;
-    recipient_phone: string;
-    message_body: string;
-    status: string;
-    error_message: string | null;
-    created_at: number;
-    updated_at: number;
-  }>("SELECT * FROM whatsapp_outbox WHERE status = 'PENDING' ORDER BY created_at ASC");
+  const db = getDrizzle();
+  const rows = await db.select()
+    .from(schema.whatsappOutbox)
+    .where(eq(schema.whatsappOutbox.status, 'PENDING'))
+    .orderBy(schema.whatsappOutbox.createdAt);
   return rows.map((r) => ({
     id: r.id,
-    recipientPhone: r.recipient_phone,
-    messageBody: r.message_body,
+    recipientPhone: r.recipientPhone,
+    messageBody: r.messageBody,
+    mediaUri: r.mediaUri,
     status: r.status as QueuedMessage["status"],
-    errorMessage: r.error_message,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    errorMessage: r.errorMessage,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   }));
 }
 
@@ -549,17 +523,20 @@ export async function updateWhatsAppMessageStatus(
   status: 'PENDING' | 'PROCESSING' | 'SENT' | 'FAILED',
   error?: string
 ) {
-  const db = await getDb();
-  await db.runAsync(
-    `UPDATE whatsapp_outbox SET status = ?, error_message = ?, updated_at = ? WHERE id = ?`,
-    [status, error || null, Date.now(), id]
-  );
+  const db = getDrizzle();
+  await db.update(schema.whatsappOutbox)
+    .set({
+      status,
+      errorMessage: error || null,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.whatsappOutbox.id, id));
 }
 
 export async function getWhatsAppQueueSize(): Promise<number> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM whatsapp_outbox WHERE status = 'PENDING'"
-  );
-  return row?.count || 0;
+  const db = getDrizzle();
+  const res = await db.select({ count: sql<number>`count(*)` })
+    .from(schema.whatsappOutbox)
+    .where(eq(schema.whatsappOutbox.status, 'PENDING'));
+  return res[0]?.count || 0;
 }

@@ -38,7 +38,7 @@ const SLIDES: Slide[] = [
     id: "slide_1",
     title: "Lead Pipeline Hub",
     description:
-      "Keep track of all your sales pipelines, contact info, and deal valuations in one central hub.",
+      "Keep track of all your sales pipelines and contact info in one central hub.",
     icon: "people-outline",
     accentColor: "#6366F1",
   },

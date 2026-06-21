@@ -11,6 +11,7 @@ import {
   Platform,
   RefreshControl,
   KeyboardAvoidingView,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -23,6 +24,7 @@ import {
   logSentMessage,
   MessageTemplate,
   MessageStats,
+  enqueueWhatsAppMessage,
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,9 +33,12 @@ import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
-import { getSecureItem, saveSecureItem } from "../../services/store";
+import { getSecureItem, saveSecureItem, useAppStore } from "../../services/store";
 import { Host, Switch } from "@expo/ui";
+import { APP_CONSTANTS } from "../../constant";
 import DateTimePicker from "@expo/ui/community/datetime-picker";
+import * as ImagePicker from "expo-image-picker";
+import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import {
   hapticLight,
   hapticMedium,
@@ -44,16 +49,58 @@ import {
 
 const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND_NOTIFICATION_TASK";
 
-export default function CampaignsScreen() {
-  const { colors, glassStyle, glassInputStyle } = useTheme();
+import { Suspense } from "react";
 
-  // Data States
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
-  const [stats, setStats] = useState<MessageStats>({
-    totalSent: 0,
-    whatsappCount: 0,
-    smsCount: 0,
+export default function CampaignsScreen() {
+  const { colors } = useTheme();
+  const [isTransitionFinished, setIsTransitionFinished] = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsTransitionFinished(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  if (!isTransitionFinished) {
+    return (
+      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <Suspense fallback={
+      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    }>
+      <CampaignsScreenContent />
+    </Suspense>
+  );
+}
+
+function CampaignsScreenContent() {
+  const { colors, glassStyle, glassInputStyle } = useTheme();
+  const store = useAppStore();
+  const queryClient = useQueryClient();
+
+
+  // Suspense Queries
+  const { data: leads = [] } = useSuspenseQuery<Lead[]>({
+    queryKey: ["leads"],
+    queryFn: getLocalLeads,
+  });
+
+  const { data: templates = [] } = useSuspenseQuery<MessageTemplate[]>({
+    queryKey: ["templates"],
+    queryFn: getLocalTemplates,
+  });
+
+  const { data: stats } = useSuspenseQuery<MessageStats>({
+    queryKey: ["stats"],
+    queryFn: getSentMessageStats,
   });
 
   // Bulk Campaign Configuration
@@ -63,6 +110,23 @@ export default function CampaignsScreen() {
     "whatsapp",
   );
   const [campaignLoading, setCampaignLoading] = useState(false);
+
+  // Campaign Image Picker State
+  const [campaignImageUri, setCampaignImageUri] = useState<string | null>(null);
+  const [waLocalLinked, setWaLocalLinked] = useState(false);
+
+  const handlePickCampaignImage = async () => {
+    hapticLight();
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setCampaignImageUri(result.assets[0].uri);
+    }
+  };
 
   // Template Modal State
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
@@ -113,18 +177,6 @@ export default function CampaignsScreen() {
 
   const loadData = async () => {
     try {
-      const localLeads = await getLocalLeads();
-      setLeads(localLeads);
-
-      const localTemplates = await getLocalTemplates();
-      setTemplates(localTemplates);
-      if (localTemplates.length > 0 && !selectedTemplateId) {
-        setSelectedTemplateId(localTemplates[0].id);
-      }
-
-      const messageStats = await getSentMessageStats();
-      setStats(messageStats);
-
       // Load reminder configuration
       const enabled = await getSecureItem("reminder_enabled");
       const timeStr = await getSecureItem("reminder_time");
@@ -135,6 +187,10 @@ export default function CampaignsScreen() {
         d.setHours(h || 9, m || 0, 0, 0);
         setReminderTime(d);
       }
+
+      // Load local WhatsApp link status
+      const isLinked = await getSecureItem("whatsapp_linked_locally");
+      setWaLocalLinked(isLinked === "true");
     } catch (e) {
       console.warn("Failed to load campaigns workspace", e);
     }
@@ -142,13 +198,31 @@ export default function CampaignsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([
+      loadData(),
+      queryClient.invalidateQueries({ queryKey: ["leads"] }),
+      queryClient.invalidateQueries({ queryKey: ["templates"] }),
+      queryClient.invalidateQueries({ queryKey: ["stats"] }),
+    ]);
     setRefreshing(false);
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (templates.length > 0 && !selectedTemplateId) {
+      setSelectedTemplateId(templates[0].id);
+    }
+  }, [templates, selectedTemplateId]);
+
+  useEffect(() => {
+    (async () => {
+      const isLinked = await getSecureItem("whatsapp_linked_locally");
+      setWaLocalLinked(isLinked === "true");
+    })();
+  }, [store.showWaWeb]);
 
   // Prepopulate default templates if none exist
   useEffect(() => {
@@ -163,7 +237,7 @@ export default function CampaignsScreen() {
         await createLocalTemplate(
           "t_2",
           "Proposal Agreement follow-up",
-          "Hello [Name], following up on the $[Value] proposal we sent. Let me know if you have any questions before signing!",
+          "Hello [Name], following up on the proposal we sent. Let me know if you have any questions before signing!",
         );
         await loadData();
       }
@@ -245,6 +319,8 @@ export default function CampaignsScreen() {
       return;
     }
 
+    const campaignImg = campaignImageUri;
+
     showCustomAlert(
       "Confirm Campaign",
       `Send "${activeTemplate.title}" to ${targetLeads.length} recipients via ${campaignChannel.toUpperCase()}?`,
@@ -257,45 +333,55 @@ export default function CampaignsScreen() {
             setCampaignLoading(true);
             try {
               let sentCount = 0;
+              let enqueuedCount = 0;
               for (const lead of targetLeads) {
                 if (!lead.phone) continue;
 
                 const personalizedMsg = activeTemplate.body
                   .replace(/\[Name\]/gi, lead.name)
-                  .replace(/\[Value\]/gi, lead.value.toLocaleString());
+                  .replace(/\[Value\]/gi, "");
 
-                const encodedText = encodeURIComponent(personalizedMsg);
-                let url = "";
                 if (campaignChannel === "whatsapp") {
-                  const cleanPhone = lead.phone.replace(/[^0-9]/g, "");
-                  url = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+                  await enqueueWhatsAppMessage(lead.phone, personalizedMsg, campaignImg || undefined);
+                  enqueuedCount++;
                 } else {
+                  const encodedText = encodeURIComponent(personalizedMsg);
                   const separator = Platform.OS === "ios" ? "&" : "?";
-                  url = `sms:${lead.phone}${separator}body=${encodedText}`;
-                }
+                  const url = `sms:${lead.phone}${separator}body=${encodedText}`;
 
-                try {
-                  const canOpen = await Linking.canOpenURL(url);
-                  if (canOpen) {
-                    await Linking.openURL(url);
-                    await logSentMessage(
-                      campaignChannel,
-                      lead.phone,
-                      "CAMPAIGN_DIRECT",
-                    );
-                    sentCount++;
+                  try {
+                    const canOpen = await Linking.canOpenURL(url);
+                    if (canOpen) {
+                      await Linking.openURL(url);
+                      await logSentMessage(
+                        "sms",
+                        lead.phone,
+                        "CAMPAIGN_DIRECT",
+                      );
+                      sentCount++;
+                    }
+                  } catch (err) {
+                    console.warn("Failed to open linking URL", err);
                   }
-                } catch (err) {
-                  console.warn("Failed to open linking URL", err);
                 }
               }
 
+              setCampaignImageUri(null); // Clear selected image
               await loadData();
-              showCustomAlert(
-                "Campaign Completed",
-                `Launched ${sentCount} custom message redirects. Logged stats.`,
-                "success",
-              );
+              
+              if (campaignChannel === "whatsapp") {
+                showCustomAlert(
+                  "Campaign Dispatched",
+                  `Enqueued ${enqueuedCount} messages in local outbox queue for background dispatch.`,
+                  "success"
+                );
+              } else {
+                showCustomAlert(
+                  "Campaign Completed",
+                  `Launched ${sentCount} custom message redirects. Logged stats.`,
+                  "success",
+                );
+              }
             } catch (err) {
               showCustomAlert("Error", "Failed to run campaign.", "error");
             } finally {
@@ -416,10 +502,10 @@ export default function CampaignsScreen() {
           {/* Header */}
           <View style={styles.headerContainer}>
             <Text style={[styles.title, { color: colors.text }]}>
-              Campaigns
+              {APP_CONSTANTS.campaigns.title}
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Bulk outreach and pre-configured automations
+              {APP_CONSTANTS.campaigns.subtitle}
             </Text>
           </View>
 
@@ -697,6 +783,46 @@ export default function CampaignsScreen() {
               </Pressable>
             </View>
 
+            {/* Campaign Image Upload Option */}
+            {campaignChannel === "whatsapp" && (
+              <View style={{ marginTop: 14 }}>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 0 }]}>
+                  Campaign Image (Optional)
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 }}>
+                  <Pressable
+                    onPress={handlePickCampaignImage}
+                    style={{
+                      height: 40,
+                      borderRadius: 10,
+                      backgroundColor: colors.primarySoft,
+                      borderColor: colors.primary + "30",
+                      borderWidth: 1.5,
+                      paddingHorizontal: 12,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6
+                    }}
+                  >
+                    <Ionicons name="image-outline" size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>
+                      {campaignImageUri ? "Change Image" : "Upload Image"}
+                    </Text>
+                  </Pressable>
+                  {campaignImageUri && (
+                    <View style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.bg, paddingHorizontal: 10, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: 11, color: colors.text }} numberOfLines={1}>
+                        {campaignImageUri.split('/').pop()}
+                      </Text>
+                      <Pressable onPress={() => setCampaignImageUri(null)} style={{ padding: 2 }}>
+                        <Ionicons name="close-circle" size={16} color={colors.danger} />
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
             {/* Trigger Button */}
             <Pressable
               onPress={() => { hapticHeavy(); executeBulkCampaign(); }}
@@ -850,7 +976,6 @@ export default function CampaignsScreen() {
                   {[
                     { label: "[Name]", color: colors.primary },
                     { label: "[Phone]", color: colors.accent },
-                    { label: "[Value]", color: colors.success },
                     { label: "[Email]", color: colors.warning },
                     { label: "[Date]", color: colors.danger },
                     { label: "[Company]", color: colors.textSecondary },

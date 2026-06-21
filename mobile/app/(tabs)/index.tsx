@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import {
   Animated,
   Easing,
@@ -13,6 +13,9 @@ import {
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
+  FlatList,
+  InteractionManager,
+  PanResponder,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -30,15 +33,17 @@ import {
 import { executeSyncCycle } from "../../services/sync";
 import { Lead, LeadStatus } from "../../shared/types";
 import { LeadCardSkeleton } from "../../components/Skeleton";
-import { getSecureItem, saveSecureItem } from "../../services/store";
+import { getSecureItem, saveSecureItem, useAppStore } from "../../services/store";
+import { APP_CONSTANTS } from "../../constant";
 import { Ionicons } from "@expo/vector-icons";
 import { triggerLocalNotification } from "../../services/notifications";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Host } from "@expo/ui";
 import {Contact, ContactField, PermissionStatus, requestPermissionsAsync} from "expo-contacts";
 import * as Linking from "expo-linking";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useDebounce } from "../../hook/useDebounce";
+import * as ImagePicker from "expo-image-picker";
 import {
   hapticLight,
   hapticMedium,
@@ -56,7 +61,42 @@ interface LeadCreateFormData {
 }
 
 export default function LeadsScreen() {
+  const { colors } = useTheme();
+  const [isTransitionFinished, setIsTransitionFinished] = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsTransitionFinished(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  if (!isTransitionFinished) {
+    return (
+      <View style={{ flex: 1, padding: 16, gap: 12, backgroundColor: colors.bg }}>
+        <LeadCardSkeleton />
+        <LeadCardSkeleton />
+        <LeadCardSkeleton />
+      </View>
+    );
+  }
+
+  return (
+    <Suspense fallback={
+      <View style={{ flex: 1, padding: 16, gap: 12 }}>
+        <LeadCardSkeleton />
+        <LeadCardSkeleton />
+        <LeadCardSkeleton />
+      </View>
+    }>
+      <LeadsScreenContent />
+    </Suspense>
+  );
+}
+
+function LeadsScreenContent() {
   const router = useRouter();
+  const store = useAppStore();
   const { theme, toggleTheme, colors, clayStyle, clayInputStyle, clayCardStyle, glassStyle, glassInputStyle } =
     useTheme();
   const insets = useSafeAreaInsets();
@@ -102,21 +142,20 @@ export default function LeadsScreen() {
 
   const {
     data: leads = [],
-    isLoading: leadsLoading,
     refetch: refetchLeads,
-  } = useQuery<Lead[]>({
+  } = useSuspenseQuery<Lead[]>({
     queryKey: ["leads"],
     queryFn: getLocalLeads,
   });
 
-  const { data: templates = [], refetch: refetchTemplates } = useQuery<
+  const { data: templates = [], refetch: refetchTemplates } = useSuspenseQuery<
     MessageTemplate[]
   >({
     queryKey: ["templates"],
     queryFn: getLocalTemplates,
   });
 
-  const { data: queueSize = 0, refetch: refetchQueue } = useQuery<number>({
+  const { data: queueSize = 0, refetch: refetchQueue } = useSuspenseQuery<number>({
     queryKey: ["queueSize"],
     queryFn: async () => {
       const queue = await getQueuedOperations();
@@ -124,14 +163,7 @@ export default function LeadsScreen() {
     },
   });
 
-  const { data: profileName = "User Account", refetch: refetchProfile } =
-    useQuery<string>({
-      queryKey: ["profileName"],
-      queryFn: async () => {
-        const savedName = await getSecureItem("profile_name");
-        return savedName || "User Account";
-      },
-    });
+  const profileName = store.user?.name || "User Account";
 
   const [syncing, setSyncing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,6 +184,50 @@ export default function LeadsScreen() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(600)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const panY = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Trigger pan responder if dragging down
+        return gestureState.dy > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          panY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 120 || gestureState.vy > 0.5) {
+          // Swipe down past threshold, close the drawer!
+          Animated.parallel([
+            Animated.timing(slideAnim, {
+              toValue: 600,
+              duration: 250,
+              useNativeDriver: true,
+            }),
+            Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            setDrawerVisible(false);
+            panY.setValue(0);
+          });
+        } else {
+          // Snap back up
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 50,
+            friction: 10,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Bulk Messaging States
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -190,7 +266,6 @@ export default function LeadsScreen() {
       queryClient.invalidateQueries({ queryKey: ["leads"] }),
       queryClient.invalidateQueries({ queryKey: ["templates"] }),
       queryClient.invalidateQueries({ queryKey: ["queueSize"] }),
-      queryClient.invalidateQueries({ queryKey: ["profileName"] }),
     ]);
   };
 
@@ -200,7 +275,6 @@ export default function LeadsScreen() {
       refetchLeads(),
       refetchTemplates(),
       refetchQueue(),
-      refetchProfile(),
     ]);
     setRefreshing(false);
   };
@@ -296,8 +370,57 @@ export default function LeadsScreen() {
     }
   };
 
+  // Image Campaign picker
+  const [campaignImageUri, setCampaignImageUri] = useState<string | null>(null);
+
+  const handlePickCampaignImage = async () => {
+    hapticLight();
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setCampaignImageUri(result.assets[0].uri);
+    }
+  };
+
   const startAutoPilotLoop = async () => {
     const selectedLeads = leads.filter((l) => selectedLeadIds.includes(l.id));
+    const finalImageUri = campaignImageUri;
+    setCampaignImageUri(null);
+
+    if (waLocalLinked) {
+      showCustomAlert(
+        "Campaign Dispatched",
+        `Enqueuing ${selectedLeads.length} messages for background dispatch.`,
+        "success"
+      );
+
+      for (const lead of selectedLeads) {
+        if (!lead.phone) continue;
+
+        let messageText = customBulkBody;
+        if (selectedTemplateId) {
+          const temp = templates.find((t) => t.id === selectedTemplateId);
+          if (temp) messageText = temp.body;
+        }
+
+        const personalizedMsg = messageText
+          .replace(/\[Name\]/gi, lead.name)
+          .replace(/\[Value\]/gi, "");
+
+        await enqueueWhatsAppMessage(lead.phone, personalizedMsg, finalImageUri || undefined);
+      }
+
+      setBulkWizardVisible(false);
+      setIsBulkMode(false);
+      setSelectedLeadIds([]);
+      await invalidateAll();
+      return;
+    }
+
     setIsAutoSending(true);
     isAutoSendingRef.current = true;
     setCurrentBulkIndex(0);
@@ -321,10 +444,10 @@ export default function LeadsScreen() {
 
       const personalizedMsg = messageText
         .replace(/\[Name\]/gi, currentLead.name)
-        .replace(/\[Value\]/gi, currentLead.value.toLocaleString());
+        .replace(/\[Value\]/gi, "");
 
       // 1. Enqueue in SQLite whatsapp_outbox as PENDING
-      const queueId = await enqueueWhatsAppMessage(currentLead.phone, personalizedMsg);
+      const queueId = await enqueueWhatsAppMessage(currentLead.phone, personalizedMsg, finalImageUri || undefined);
 
       // Human sender pacing delay (1.5s)
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -399,7 +522,7 @@ export default function LeadsScreen() {
 
     const personalizedMsg = messageText
       .replace(/\[Name\]/gi, lead.name)
-      .replace(/\[Value\]/gi, lead.value.toLocaleString());
+      .replace(/\[Value\]/gi, "");
 
     const encodedText = encodeURIComponent(personalizedMsg);
     let url = "";
@@ -429,6 +552,7 @@ export default function LeadsScreen() {
   };
 
   const openDrawer = () => {
+    panY.setValue(0);
     setDrawerVisible(true);
     Animated.parallel([
       Animated.timing(slideAnim, {
@@ -522,8 +646,10 @@ export default function LeadsScreen() {
 
   const handleSaveProfile = async () => {
     if (!tempProfileName.trim()) return;
-    await saveSecureItem("profile_name", tempProfileName.trim());
-    await invalidateAll();
+    await store.setUser({
+      ...(store.user || { id: "u_dev_user", email: "dev@autoreach.com", role: "ADMIN", organizationId: "org_123" }),
+      name: tempProfileName.trim()
+    });
     setProfileModalVisible(false);
   };
 
@@ -574,7 +700,7 @@ export default function LeadsScreen() {
                 {profileName}
               </Text>
               <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "500" }}>
-                AutoReach Pro
+                {APP_CONSTANTS.contacts.subtitle}
               </Text>
             </View>
           </Pressable>
@@ -641,7 +767,7 @@ export default function LeadsScreen() {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search contacts..."
+              placeholder={APP_CONSTANTS.contacts.searchPlaceholder}
               placeholderTextColor={colors.textMuted}
               style={{ flex: 1, color: colors.text, fontSize: 15, fontWeight: "500" }}
             />
@@ -706,10 +832,16 @@ export default function LeadsScreen() {
           })}
         </ScrollView>
 
-        {/* Lead List Cards */}
-        <ScrollView
-          style={{ flex: 1 }}
+        {/* Lead List Cards (Virtualized FlatList with Suspense) */}
+        <FlatList
+          data={filteredLeads}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.leadsListContainer}
+          removeClippedSubviews={Platform.OS === "android"}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={10}
+          windowSize={5}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -718,14 +850,106 @@ export default function LeadsScreen() {
               tintColor={colors.primary}
             />
           }
-        >
-          {leadsLoading && leads.length === 0 ? (
-            <View style={{ gap: 12 }}>
-              <LeadCardSkeleton />
-              <LeadCardSkeleton />
-              <LeadCardSkeleton />
-            </View>
-          ) : filteredLeads.length === 0 ? (
+          renderItem={({ item: lead }) => {
+            const isSelected = selectedLeadIds.includes(lead.id);
+            const statusColor =
+              lead.status === "WON"
+                ? colors.success
+                : lead.status === "LOST"
+                ? colors.danger
+                : lead.status === "QUALIFIED"
+                ? colors.accent
+                : lead.status === "CONTACTED"
+                ? colors.warning
+                : colors.primary;
+            const statusBg =
+              lead.status === "WON"
+                ? colors.successSoft
+                : lead.status === "LOST"
+                ? colors.dangerSoft
+                : lead.status === "QUALIFIED"
+                ? colors.accentSoft
+                : lead.status === "CONTACTED"
+                ? colors.warningSoft
+                : colors.primarySoft;
+
+            return (
+              <Pressable
+                key={lead.id}
+                onPress={() => {
+                  if (isBulkMode) {
+                    hapticLight();
+                    setSelectedLeadIds((prev) =>
+                      prev.includes(lead.id)
+                        ? prev.filter((id) => id !== lead.id)
+                        : [...prev, lead.id],
+                    );
+                  } else {
+                    hapticMedium();
+                    router.push(`/contact/${lead.id}`);
+                  }
+                }}
+                style={[
+                  styles.leadCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    borderWidth: isSelected ? 2 : 1.5,
+                    shadowColor: isSelected ? colors.primary : colors.clayShadowDark,
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: isSelected ? 0.3 : 0.15,
+                    shadowRadius: 14,
+                    elevation: isSelected ? 10 : 6,
+                  },
+                ]}
+              >
+                {/* Colored left accent */}
+                <View style={[styles.cardAccent, { backgroundColor: statusColor }]} />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    width: "100%",
+                    alignItems: "center",
+                    paddingLeft: 12,
+                  }}
+                >
+                  {isBulkMode && (
+                    <View style={{ marginRight: 12 }}>
+                      <Ionicons
+                        name={isSelected ? "checkbox" : "square-outline"}
+                        size={24}
+                        color={isSelected ? colors.primary : colors.textMuted}
+                      />
+                    </View>
+                  )}
+                  <View style={[
+                    styles.contactAvatar,
+                    { backgroundColor: statusBg }
+                  ]}>
+                    <Text style={{ color: statusColor, fontWeight: "800", fontSize: 16 }}>
+                      {lead.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text, letterSpacing: -0.2 }}>
+                      {lead.name}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, fontWeight: "500" }}>
+                      {lead.phone || lead.email || "No contact info"}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4, paddingHorizontal: 8 }}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: statusColor, letterSpacing: 0.5 }}>
+                        {lead.status}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
             <Text
               style={{
                 textAlign: "center",
@@ -736,111 +960,8 @@ export default function LeadsScreen() {
             >
               No contacts found.
             </Text>
-          ) : (
-            filteredLeads.map((lead) => {
-              const isSelected = selectedLeadIds.includes(lead.id);
-              const statusColor =
-                lead.status === "WON"
-                  ? colors.success
-                  : lead.status === "LOST"
-                  ? colors.danger
-                  : lead.status === "QUALIFIED"
-                  ? colors.accent
-                  : lead.status === "CONTACTED"
-                  ? colors.warning
-                  : colors.primary;
-              const statusBg =
-                lead.status === "WON"
-                  ? colors.successSoft
-                  : lead.status === "LOST"
-                  ? colors.dangerSoft
-                  : lead.status === "QUALIFIED"
-                  ? colors.accentSoft
-                  : lead.status === "CONTACTED"
-                  ? colors.warningSoft
-                  : colors.primarySoft;
-
-              return (
-                <Pressable
-                  key={lead.id}
-                  onPress={() => {
-                    if (isBulkMode) {
-                      hapticLight();
-                      setSelectedLeadIds((prev) =>
-                        prev.includes(lead.id)
-                          ? prev.filter((id) => id !== lead.id)
-                          : [...prev, lead.id],
-                      );
-                    } else {
-                      hapticMedium();
-                      router.push(`/contact/${lead.id}`);
-                    }
-                  }}
-                  style={[
-                    styles.leadCard,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      borderWidth: isSelected ? 2 : 1.5,
-                      shadowColor: isSelected ? colors.primary : colors.clayShadowDark,
-                      shadowOffset: { width: 0, height: 6 },
-                      shadowOpacity: isSelected ? 0.3 : 0.15,
-                      shadowRadius: 14,
-                      elevation: isSelected ? 10 : 6,
-                    },
-                  ]}
-                >
-                  {/* Colored left accent */}
-                  <View style={[styles.cardAccent, { backgroundColor: statusColor }]} />
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      width: "100%",
-                      alignItems: "center",
-                      paddingLeft: 12,
-                    }}
-                  >
-                    {isBulkMode && (
-                      <View style={{ marginRight: 12 }}>
-                        <Ionicons
-                          name={isSelected ? "checkbox" : "square-outline"}
-                          size={24}
-                          color={isSelected ? colors.primary : colors.textMuted}
-                        />
-                      </View>
-                    )}
-                    <View style={[
-                      styles.contactAvatar,
-                      { backgroundColor: statusBg }
-                    ]}>
-                      <Text style={{ color: statusColor, fontWeight: "800", fontSize: 16 }}>
-                        {lead.name.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text, letterSpacing: -0.2 }}>
-                        {lead.name}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, fontWeight: "500" }}>
-                        {lead.phone || lead.email || "No contact info"}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end", gap: 4 ,paddingHorizontal:8}}>
-                      <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>
-                        ${lead.value.toLocaleString()}
-                      </Text>
-                      <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
-                        <Text style={{ fontSize: 9, fontWeight: "800", color: statusColor, letterSpacing: 0.5 }}>
-                          {lead.status}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </Pressable>
-              );
-            })
-          )}
-        </ScrollView>
+          }
+        />
 
         {/* Clay FAB */}
         <Pressable
@@ -863,155 +984,186 @@ export default function LeadsScreen() {
         {/* Create Contact Drawer Modal */}
         {drawerVisible && (
           <Modal transparent visible={drawerVisible} animationType="none">
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-              style={{ flex: 1 }}
-            >
-              <View style={styles.drawerOverlay}>
-                <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill}>
+            <View style={styles.drawerOverlay}>
+              <Pressable onPress={closeDrawer} style={StyleSheet.absoluteFill}>
                 <Animated.View
                   style={[styles.drawerBackdrop, { opacity: fadeAnim }]}
                 />
               </Pressable>
 
-              <Animated.View
-                style={[
-                  styles.drawerContent,
-                  {
-                    transform: [{ translateY: slideAnim }],
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    shadowColor: colors.clayShadowDark,
-                    shadowOffset: { width: 0, height: -8 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 20,
-                    elevation: 20,
-                  },
-                ]}
+              <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
+                style={{ width: "100%" }}
               >
-                <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
-                  <View style={styles.drawerHeader}>
-                    <Text
-                      style={{
-                        fontSize: 18,
-                        fontWeight: "bold",
-                        color: colors.text,
-                      }}
-                    >
-                      Create New Contact
-                    </Text>
-                    <View style={{ flex: 1 }} />
-                    <Pressable onPress={closeDrawer} style={styles.iconBtn}>
-                      <Ionicons name="close" size={24} color={colors.text} />
-                    </Pressable>
-                  </View>
-
-                  <TextInput
-                    value={formData.name}
-                    onChangeText={(val) =>
-                      setFormData((prev) => ({ ...prev, name: val }))
-                    }
-                    placeholder="Full Name / Company"
-                    placeholderTextColor={colors.textMuted}
-                    style={[glassInputStyle, styles.drawerInput]}
-                  />
-
-                  <View style={styles.statusSelectContainer}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "600",
-                        color: colors.textSecondary,
-                        marginBottom: 8,
-                      }}
-                    >
-                      Status
-                    </Text>
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      {(
-                        [
-                          "NEW",
-                          "CONTACTED",
-                          "QUALIFIED",
-                          "LOST",
-                          "WON",
-                        ] as const
-                      ).map((opt) => {
-                        const isSel = formData.status === opt;
-                        return (
-                          <Pressable
-                            key={opt}
-                            onPress={() =>
-                              setFormData((prev) => ({ ...prev, status: opt }))
-                            }
-                            style={[
-                              styles.statusPill,
-                              isSel
-                                ? { backgroundColor: colors.primary }
-                                : {
-                                    backgroundColor: colors.bg,
-                                    borderColor: colors.border,
-                                    borderWidth: 1,
-                                  },
-                            ]}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 11,
-                                color: isSel ? "#FFFFFF" : colors.textSecondary,
-                              }}
-                            >
-                              {opt}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-
-                  <TextInput
-                    value={formData.email}
-                    onChangeText={(val) =>
-                      setFormData((prev) => ({ ...prev, email: val }))
-                    }
-                    placeholder="Email Address"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="email-address"
-                    style={[glassInputStyle, styles.drawerInput]}
-                  />
-
-                  <TextInput
-                    value={formData.phone}
-                    onChangeText={(val) =>
-                      setFormData((prev) => ({ ...prev, phone: val }))
-                    }
-                    placeholder="Phone Number"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="phone-pad"
-                    style={[glassInputStyle, styles.drawerInput]}
-                  />
-
-                  <Pressable
-                    onPress={() => { hapticMedium(); handleCreateLead(); }}
-                    style={[
-                      styles.saveBtn,
-                      { backgroundColor: colors.primary },
-                    ]}
+                <Animated.View
+                  style={[
+                    styles.drawerContent,
+                    {
+                      transform: [{ translateY: Animated.add(slideAnim, panY) }],
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      shadowColor: colors.clayShadowDark,
+                      shadowOffset: { width: 0, height: -8 },
+                      shadowOpacity: 0.2,
+                      shadowRadius: 20,
+                      elevation: 20,
+                    },
+                  ]}
+                >
+                  {/* Visual Drag Handle (Attached to PanResponder) */}
+                  <View
+                    {...panResponder.panHandlers}
+                    style={{
+                      width: "100%",
+                      alignItems: "center",
+                      paddingTop: 12,
+                      paddingBottom: 6,
+                    }}
                   >
-                    <Text
+                    <View
                       style={{
-                        color: "#FFFFFF",
-                        fontWeight: "bold",
-                        fontSize: 14,
+                        width: 36,
+                        height: 5,
+                        borderRadius: 2.5,
+                        backgroundColor: colors.border,
                       }}
-                    >
-                      Save Contact
-                    </Text>
-                  </Pressable>
-                </View>
-              </Animated.View>
+                    />
+                  </View>
+
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    style={{ maxHeight: 420 }}
+                  >
+                    <View style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+                      {/* Swipeable Drawer Header */}
+                      <View 
+                        {...panResponder.panHandlers}
+                        style={styles.drawerHeader}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 18,
+                            fontWeight: "bold",
+                            color: colors.text,
+                          }}
+                        >
+                          Create New Contact
+                        </Text>
+                        <View style={{ flex: 1 }} />
+                        <Pressable onPress={closeDrawer} style={styles.iconBtn}>
+                          <Ionicons name="close" size={24} color={colors.text} />
+                        </Pressable>
+                      </View>
+
+                      <TextInput
+                        value={formData.name}
+                        onChangeText={(val) =>
+                          setFormData((prev) => ({ ...prev, name: val }))
+                        }
+                        placeholder="Full Name / Company"
+                        placeholderTextColor={colors.textMuted}
+                        style={[glassInputStyle, styles.drawerInput]}
+                      />
+
+                      <View style={styles.statusSelectContainer}>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "600",
+                            color: colors.textSecondary,
+                            marginBottom: 8,
+                          }}
+                        >
+                          Status
+                        </Text>
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          {(
+                            [
+                              "NEW",
+                              "CONTACTED",
+                              "QUALIFIED",
+                              "LOST",
+                              "WON",
+                            ] as const
+                          ).map((opt) => {
+                            const isSel = formData.status === opt;
+                            return (
+                              <Pressable
+                                key={opt}
+                                onPress={() =>
+                                  setFormData((prev) => ({ ...prev, status: opt }))
+                                }
+                                style={[
+                                  styles.statusPill,
+                                  isSel
+                                    ? { backgroundColor: colors.primary }
+                                    : {
+                                        backgroundColor: colors.bg,
+                                        borderColor: colors.border,
+                                        borderWidth: 1,
+                                      },
+                                ]}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    color: isSel ? "#FFFFFF" : colors.textSecondary,
+                                  }}
+                                >
+                                  {opt}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      <TextInput
+                        value={formData.email}
+                        onChangeText={(val) =>
+                          setFormData((prev) => ({ ...prev, email: val }))
+                        }
+                        placeholder="Email Address"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="email-address"
+                        style={[glassInputStyle, styles.drawerInput]}
+                      />
+
+                      <TextInput
+                        value={formData.phone}
+                        onChangeText={(val) =>
+                          setFormData((prev) => ({ ...prev, phone: val }))
+                        }
+                        placeholder="Phone Number"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="phone-pad"
+                        style={[glassInputStyle, styles.drawerInput]}
+                      />
+
+                      <Pressable
+                        onPress={() => { hapticMedium(); handleCreateLead(); }}
+                        style={[
+                          styles.saveBtn,
+                          { backgroundColor: colors.primary },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: "#FFFFFF",
+                            fontWeight: "bold",
+                            fontSize: 14,
+                          }}
+                        >
+                          Save Contact
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </ScrollView>
+                </Animated.View>
+              </KeyboardAvoidingView>
             </View>
-            </KeyboardAvoidingView>
           </Modal>
         )}
 
@@ -1023,7 +1175,7 @@ export default function LeadsScreen() {
             animationType="slide"
           >
             <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
               style={{ flex: 1 }}
             >
               <View style={styles.modalOverlay}>
@@ -1202,224 +1354,266 @@ export default function LeadsScreen() {
             animationType="slide"
           >
             <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
               style={{ flex: 1 }}
             >
               <View style={styles.modalOverlay}>
                 <View
-                style={[
-                  styles.modalCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    borderWidth: 1,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 18,
-                      fontWeight: "bold",
-                      color: colors.text,
-                    }}
-                  >
-                    Select Campaign Template
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <Pressable
-                    onPress={() => setBulkTemplateModalVisible(false)}
-                    style={styles.iconBtn}
-                  >
-                    <Ionicons name="close" size={24} color={colors.text} />
-                  </Pressable>
-                </View>
-
-                {/* Templates Scroll list */}
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 8,
-                  }}
-                >
-                  Pre-configured Templates
-                </Text>
-                <ScrollView
-                  style={{ maxHeight: 180, marginBottom: 16 }}
-                  nestedScrollEnabled
-                >
-                  {templates.map((t) => {
-                    const isSel = selectedTemplateId === t.id;
-                    return (
-                      <Pressable
-                        key={t.id}
-                        onPress={() => {
-                          setSelectedTemplateId(t.id);
-                          setCustomBulkBody(""); // Clear custom body if template selected
-                        }}
-                        style={[
-                          styles.templateSelectItem,
-                          {
-                            borderColor: colors.border,
-                            borderWidth: 1,
-                            padding: 10,
-                            borderRadius: 8,
-                            marginBottom: 8,
-                          },
-                          isSel && {
-                            backgroundColor: `${colors.primary}1A`,
-                            borderColor: colors.primary,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 14,
-                            fontWeight: "bold",
-                            color: isSel ? colors.primary : colors.text,
-                          }}
-                        >
-                          {t.title}
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: colors.textSecondary,
-                            marginTop: 4,
-                          }}
-                          numberOfLines={2}
-                        >
-                          {t.body}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-
-                {/* Custom Body input */}
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginBottom: 8,
-                  }}
-                >
-                  Or Write Custom Message
-                </Text>
-                <TextInput
-                  value={customBulkBody}
-                  onChangeText={(val) => {
-                    setCustomBulkBody(val);
-                    setSelectedTemplateId(""); // Clear selected template if writing custom body
-                  }}
-                  placeholder="Type message here. Use [Name] and [Value] to personalize."
-                  placeholderTextColor={colors.textMuted}
-                  multiline
                   style={[
-                    glassInputStyle,
+                    styles.modalCard,
                     {
-                      height: 80,
-                      textAlignVertical: "top",
-                      marginBottom: 16,
-                      padding: 10,
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      maxHeight: "85%", // prevent screen overflow
                     },
                   ]}
-                />
-
-                {/* Local Gateway / Auto-Pilot Option */}
-                {bulkChannel === "whatsapp" && (
-                  <View style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    padding: 12,
-                    borderRadius: 12,
-                    backgroundColor: waLocalLinked ? colors.successSoft : colors.primarySoft,
-                    borderColor: waLocalLinked ? colors.success + "30" : colors.primary + "30",
-                    borderWidth: 1.5,
-                    marginBottom: 16,
-                    gap: 10
-                  }}>
-                    <Ionicons 
-                      name={waLocalLinked ? "logo-whatsapp" : "warning-outline"} 
-                      size={18} 
-                      color={waLocalLinked ? colors.success : colors.primary} 
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: "bold", color: colors.text }}>
-                        Local WhatsApp Linked
-                      </Text>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                        {waLocalLinked 
-                          ? "Auto-Pilot background sending is available." 
-                          : "Configure device linking in Settings for Auto-Pilot."}
-                      </Text>
-                    </View>
-                    {waLocalLinked && (
-                      <Pressable 
-                        onPress={() => { hapticLight(); setAutoPilotActive(!autoPilotActive); }}
+                >
+                  <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Text
                         style={{
-                          width: 44,
-                          height: 24,
-                          borderRadius: 12,
-                          backgroundColor: autoPilotActive ? colors.success : colors.border,
-                          padding: 2,
-                          justifyContent: "center",
-                          alignItems: autoPilotActive ? "flex-end" : "flex-start",
+                          fontSize: 18,
+                          fontWeight: "bold",
+                          color: colors.text,
                         }}
                       >
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#FFFFFF" }} />
+                        Select Campaign Template
+                      </Text>
+                      <View style={{ flex: 1 }} />
+                      <Pressable
+                        onPress={() => setBulkTemplateModalVisible(false)}
+                        style={styles.iconBtn}
+                      >
+                        <Ionicons name="close" size={24} color={colors.text} />
                       </Pressable>
-                    )}
-                  </View>
-                )}
+                    </View>
 
-                <Pressable
-                  onPress={() => {
-                    const selectedLeadsCount = leads.filter((l) =>
-                      selectedLeadIds.includes(l.id),
-                    ).length;
-                    let hasText = customBulkBody.trim().length > 0;
-                    if (selectedTemplateId) {
-                      const temp = templates.find(
-                        (t) => t.id === selectedTemplateId,
-                      );
-                      if (temp) hasText = true;
-                    }
-                    if (!hasText) {
-                      showCustomAlert(
-                        "Empty Message",
-                        "Please select a template or write a custom message.",
-                        "warning",
-                      );
-                      return;
-                    }
-                    setBulkTemplateModalVisible(false);
-                    setCurrentBulkIndex(0);
-                    setBulkWizardVisible(true);
-                    if (autoPilotActive && bulkChannel === "whatsapp" && waLocalLinked) {
-                      startAutoPilotLoop();
-                    }
-                  }}
-                  style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Text
-                    style={{
-                      color: "#FFFFFF",
-                      fontWeight: "bold",
-                      fontSize: 14,
-                    }}
-                  >
-                    Start Sequential Dispatch ({selectedLeadIds.length}{" "}
-                    recipients)
-                  </Text>
-                </Pressable>
+                    {/* Templates Scroll list */}
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Pre-configured Templates
+                    </Text>
+                    <ScrollView
+                      style={{ maxHeight: 150, marginBottom: 16 }}
+                      nestedScrollEnabled
+                    >
+                      {templates.map((t) => {
+                        const isSel = selectedTemplateId === t.id;
+                        return (
+                          <Pressable
+                            key={t.id}
+                            onPress={() => {
+                              setSelectedTemplateId(t.id);
+                              setCustomBulkBody(""); // Clear custom body if template selected
+                            }}
+                            style={[
+                              styles.templateSelectItem,
+                              {
+                                borderColor: colors.border,
+                                borderWidth: 1,
+                                padding: 10,
+                                borderRadius: 8,
+                                marginBottom: 8,
+                              },
+                              isSel && {
+                                backgroundColor: `${colors.primary}1A`,
+                                borderColor: colors.primary,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 14,
+                                fontWeight: "bold",
+                                color: isSel ? colors.primary : colors.text,
+                              }}
+                            >
+                              {t.title}
+                            </Text>
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                color: colors.textSecondary,
+                                marginTop: 4,
+                              }}
+                              numberOfLines={2}
+                            >
+                              {t.body}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+
+                    {/* Custom Body input */}
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Or Write Custom Message
+                    </Text>
+                    <TextInput
+                      value={customBulkBody}
+                      onChangeText={(val) => {
+                        setCustomBulkBody(val);
+                        setSelectedTemplateId(""); // Clear selected template if writing custom body
+                      }}
+                      placeholder="Type message here. Use [Name] to personalize."
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      style={[
+                        glassInputStyle,
+                        {
+                          height: 70,
+                          textAlignVertical: "top",
+                          marginBottom: 16,
+                          padding: 10,
+                        },
+                      ]}
+                    />
+
+                    {/* Campaign Image Upload Option */}
+                    {bulkChannel === "whatsapp" && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
+                          Campaign Image (Optional)
+                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                          <Pressable
+                            onPress={handlePickCampaignImage}
+                            style={{
+                              height: 40,
+                              borderRadius: 10,
+                              backgroundColor: colors.primarySoft,
+                              borderColor: colors.primary + "30",
+                              borderWidth: 1.5,
+                              paddingHorizontal: 12,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 6
+                            }}
+                          >
+                            <Ionicons name="image-outline" size={16} color={colors.primary} />
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>
+                              {campaignImageUri ? "Change Image" : "Upload Image"}
+                            </Text>
+                          </Pressable>
+                          {campaignImageUri && (
+                            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.bg, paddingHorizontal: 10, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}>
+                              <Text style={{ fontSize: 11, color: colors.text }} numberOfLines={1}>
+                                {campaignImageUri.split('/').pop()}
+                              </Text>
+                              <Pressable onPress={() => setCampaignImageUri(null)} style={{ padding: 2 }}>
+                                <Ionicons name="close-circle" size={16} color={colors.danger} />
+                              </Pressable>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Local Gateway / Auto-Pilot Option */}
+                    {bulkChannel === "whatsapp" && (
+                      <View style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        padding: 12,
+                        borderRadius: 12,
+                        backgroundColor: waLocalLinked ? colors.successSoft : colors.primarySoft,
+                        borderColor: waLocalLinked ? colors.success + "30" : colors.primary + "30",
+                        borderWidth: 1.5,
+                        marginBottom: 16,
+                        gap: 10
+                      }}>
+                        <Ionicons 
+                          name={waLocalLinked ? "logo-whatsapp" : "warning-outline"} 
+                          size={18} 
+                          color={waLocalLinked ? colors.success : colors.primary} 
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: colors.text }}>
+                            Local WhatsApp Linked
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                            {waLocalLinked 
+                              ? "Auto-Pilot background sending is available." 
+                              : "Configure device linking in Settings for Auto-Pilot."}
+                          </Text>
+                        </View>
+                        {waLocalLinked && (
+                          <Pressable 
+                            onPress={() => { hapticLight(); setAutoPilotActive(!autoPilotActive); }}
+                            style={{
+                              width: 44,
+                              height: 24,
+                              borderRadius: 12,
+                              backgroundColor: autoPilotActive ? colors.success : colors.border,
+                              padding: 2,
+                              justifyContent: "center",
+                              alignItems: autoPilotActive ? "flex-end" : "flex-start",
+                            }}
+                          >
+                            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#FFFFFF" }} />
+                          </Pressable>
+                        )}
+                      </View>
+                    )}
+
+                    <Pressable
+                      onPress={() => {
+                        const selectedLeadsCount = leads.filter((l) =>
+                          selectedLeadIds.includes(l.id),
+                        ).length;
+                        let hasText = customBulkBody.trim().length > 0;
+                        if (selectedTemplateId) {
+                          const temp = templates.find(
+                            (t) => t.id === selectedTemplateId,
+                          );
+                          if (temp) hasText = true;
+                        }
+                        if (!hasText) {
+                          showCustomAlert(
+                            "Empty Message",
+                            "Please select a template or write a custom message.",
+                            "warning",
+                          );
+                          return;
+                        }
+                        setBulkTemplateModalVisible(false);
+                        setCurrentBulkIndex(0);
+                        setBulkWizardVisible(true);
+                        if (autoPilotActive && bulkChannel === "whatsapp" && waLocalLinked) {
+                          startAutoPilotLoop();
+                        }
+                      }}
+                      style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                    >
+                      <Text
+                        style={{
+                          color: "#FFFFFF",
+                          fontWeight: "bold",
+                          fontSize: 14,
+                        }}
+                      >
+                        Start Campaign ({selectedLeadIds.length} recipients)
+                      </Text>
+                    </Pressable>
+                  </ScrollView>
                 </View>
               </View>
             </KeyboardAvoidingView>
@@ -1510,7 +1704,7 @@ export default function LeadsScreen() {
                   }
                   const personalizedMsg = messageText
                     .replace(/\[Name\]/gi, lead.name)
-                    .replace(/\[Value\]/gi, lead.value.toLocaleString());
+                    .replace(/\[Value\]/gi, "");
 
                   if (autoPilotActive && bulkChannel === "whatsapp" && waLocalLinked && isAutoSending) {
                     return (

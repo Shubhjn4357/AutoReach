@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import {
   StyleSheet,
   View,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   Pressable,
   RefreshControl,
+  ActivityIndicator,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -15,9 +17,10 @@ import {
   deleteLocalLead,
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
-import { calculatePipelineMetrics } from "../../shared/crm";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Host } from "@expo/ui";
+import { APP_CONSTANTS } from "../../constant";
+import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import {
   hapticLight,
   hapticMedium,
@@ -27,10 +30,47 @@ import {
 } from "../../services/haptics";
 
 export default function CRMPipelinesScreen() {
+  const { colors } = useTheme();
+  const [isTransitionFinished, setIsTransitionFinished] = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsTransitionFinished(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  if (!isTransitionFinished) {
+    return (
+      <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.bg, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <Suspense fallback={
+      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    }>
+      <CRMPipelinesScreenContent />
+    </Suspense>
+  );
+}
+
+function CRMPipelinesScreenContent() {
   const { colors, glassStyle } = useTheme();
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const queryClient = useQueryClient();
+
+  const { data: leads = [] } = useSuspenseQuery<Lead[]>({
+    queryKey: ["leads"],
+    queryFn: getLocalLeads,
+  });
+
   const [filterStatus, setFilterStatus] = useState<LeadStatus | "ALL">("ALL");
   const [refreshing, setRefreshing] = useState(false);
+
 
   // Custom Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -61,20 +101,11 @@ export default function CRMPipelinesScreen() {
     });
   };
 
-  const loadData = async () => {
-    const localLeads = await getLocalLeads();
-    setLeads(localLeads);
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await queryClient.invalidateQueries({ queryKey: ["leads"] });
     setRefreshing(false);
   };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const changeLeadStatus = async (lead: Lead, nextStatus: LeadStatus) => {
     hapticMedium();
@@ -84,7 +115,7 @@ export default function CRMPipelinesScreen() {
       updatedAt: Date.now(),
     };
     await updateLocalLead(updated);
-    await loadData();
+    await queryClient.invalidateQueries({ queryKey: ["leads"] });
     hapticSuccess();
     showCustomAlert(
       "Updated!",
@@ -106,7 +137,7 @@ export default function CRMPipelinesScreen() {
           style: "destructive",
           onPress: async () => {
             await deleteLocalLead(id);
-            await loadData();
+            await queryClient.invalidateQueries({ queryKey: ["leads"] });
           },
         },
       ],
@@ -118,7 +149,6 @@ export default function CRMPipelinesScreen() {
       ? leads
       : leads.filter((l) => l.status === filterStatus);
 
-  const metrics = calculatePipelineMetrics(leads);
   const stages: (LeadStatus | "ALL")[] = [
     "ALL",
     "NEW",
@@ -147,9 +177,9 @@ export default function CRMPipelinesScreen() {
         >
           {/* Header */}
           <View style={styles.headerContainer}>
-            <Text style={[styles.title, { color: colors.text }]}>Pipeline</Text>
+            <Text style={[styles.title, { color: colors.text }]}>{APP_CONSTANTS.crm.title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Track conversion stages and deal values
+              {APP_CONSTANTS.crm.subtitle}
             </Text>
           </View>
 
@@ -163,10 +193,10 @@ export default function CRMPipelinesScreen() {
               ]}
             >
               <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Pipeline Value
+                Total Contacts
               </Text>
               <Text style={[styles.metricValue, { color: colors.primary }]}>
-                ${metrics.totalValue.toLocaleString()}
+                {leads.length}
               </Text>
             </View>
             <View
@@ -177,10 +207,10 @@ export default function CRMPipelinesScreen() {
               ]}
             >
               <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Leads Count
+                Active Leads
               </Text>
               <Text style={[styles.metricValue, { color: colors.success }]}>
-                {metrics.activeCount}
+                {leads.filter((l) => l.status !== "WON" && l.status !== "LOST").length}
               </Text>
             </View>
             <View
@@ -191,15 +221,10 @@ export default function CRMPipelinesScreen() {
               ]}
             >
               <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Avg Value
+                Deals Won
               </Text>
               <Text style={[styles.metricValue, { color: colors.accent }]}>
-                $
-                {Math.round(
-                  metrics.activeCount > 0
-                    ? metrics.totalValue / metrics.activeCount
-                    : 0,
-                ).toLocaleString()}
+                {leads.filter((l) => l.status === "WON").length}
               </Text>
             </View>
           </View>
@@ -245,7 +270,7 @@ export default function CRMPipelinesScreen() {
           <View style={styles.listContainer}>
             {filteredLeads.length === 0 ? (
               <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                No deals in this stage.
+                {APP_CONSTANTS.crm.emptyState}
               </Text>
             ) : (
               filteredLeads.map((lead) => (
@@ -272,11 +297,6 @@ export default function CRMPipelinesScreen() {
                       </Text>
                     </View>
                     <View style={styles.leadCardTopRight}>
-                      <Text
-                        style={[styles.leadValue, { color: colors.primary }]}
-                      >
-                        ${lead.value.toLocaleString()}
-                      </Text>
                       <View
                         style={[
                           styles.statusBadge,

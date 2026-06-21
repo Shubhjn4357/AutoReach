@@ -12,6 +12,8 @@ export interface AppState {
   } | null;
   apiUrl: string;
   theme: "dark" | "light";
+  showWaWeb: boolean;
+  waWebStep: "qr" | "loading" | "success";
 }
 
 // Initial in-memory state
@@ -20,6 +22,8 @@ let state: AppState = {
   user: null,
   apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000",
   theme: "dark",
+  showWaWeb: false,
+  waWebStep: "qr",
 };
 
 const listeners = new Set<() => void>();
@@ -120,9 +124,22 @@ export const useAppStore = () => {
         console.error("SecureStore write error:", err);
       }
     },
-    setUser: (user: AppState["user"]) => {
-      state = { ...state, user };
-      notify();
+    setUser: async (user: AppState["user"]) => {
+      try {
+        if (user) {
+          await saveSecureItem("auth_user", JSON.stringify(user));
+          if (user.name) {
+            await saveSecureItem("profile_name", user.name);
+          }
+        } else {
+          await removeSecureItem("auth_user");
+          await removeSecureItem("profile_name");
+        }
+        state = { ...state, user };
+        notify();
+      } catch (err) {
+        console.error("SecureStore write error for user:", err);
+      }
     },
     setApiUrl: (apiUrl: string) => {
       state = { ...state, apiUrl };
@@ -132,6 +149,14 @@ export const useAppStore = () => {
       state = { ...state, theme };
       notify();
     },
+    setWaWebVisible: (visible: boolean) => {
+      state = { ...state, showWaWeb: visible };
+      notify();
+    },
+    setWaWebStep: (step: AppState["waWebStep"]) => {
+      state = { ...state, waWebStep: step };
+      notify();
+    },
   };
 };
 
@@ -139,7 +164,9 @@ export const useAppStore = () => {
 export async function bootstrapStore() {
   try {
     const token = await getSecureItem("auth_token");
-    state = { ...state, token };
+    const userStr = await getSecureItem("auth_user");
+    const user = userStr ? JSON.parse(userStr) : null;
+    state = { ...state, token, user };
     notify();
   } catch (err) {
     console.error("Bootstrapping auth store failed:", err);

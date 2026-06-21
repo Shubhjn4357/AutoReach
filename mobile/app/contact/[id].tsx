@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -10,13 +10,14 @@ import {
   Pressable,
   Platform,
   KeyboardAvoidingView,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import { useTheme } from "../../services/theme";
 import {
-  getDb,
+  getLocalLead,
   updateLocalLead,
   deleteLocalLead,
   logSentMessage,
@@ -26,6 +27,8 @@ import { recommendNextStep } from "../../shared/crm";
 import { Ionicons } from "@expo/vector-icons";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Host } from "@expo/ui";
+import { useSuspenseQuery, useQueryClient, useQuery } from "@tanstack/react-query";
+import { ContactDetailSkeleton } from "../../components/Skeleton";
 
 interface AiAuditResult {
   score: number;
@@ -48,28 +51,36 @@ interface RawSqlLead {
   updated_at: number;
 }
 
-// Throttle Custom Hook (Prevent rapid spam clicks)
-function useThrottle<Args extends unknown[], R>(
-  callback: (...args: Args) => R,
-  delay = 1500,
-): (...args: Args) => void {
-  const lastRun = useRef<number>(0);
-  return (...args: Args) => {
-    const now = Date.now();
-    if (now - lastRun.current >= delay) {
-      lastRun.current = now;
-      callback(...args);
-    }
-  };
-}
+import { useThrottle } from "../../hook/useThrottle";
 
 export default function ContactDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  return (
+    <Suspense fallback={<ContactDetailSkeleton />}>
+      <ContactDetailScreenContent />
+    </Suspense>
+  );
+}
+
+function ContactDetailScreenContent() {
+  const { id = "" } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { colors, glassStyle, glassInputStyle } = useTheme();
 
-  const [lead, setLead] = useState<Lead | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isTransitionFinished, setIsTransitionFinished] = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsTransitionFinished(true);
+    });
+    return () => task.cancel();
+  }, []);
+
+  const { data: lead, isLoading } = useQuery<Lead | null>({
+    queryKey: ["lead", id],
+    queryFn: () => getLocalLead(id),
+    enabled: isTransitionFinished && !!id,
+  });
 
   // Modal & Form States
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -80,6 +91,22 @@ export default function ContactDetailScreen() {
     notes: "",
     status: "NEW" as LeadStatus,
   });
+
+  useEffect(() => {
+    if (lead) {
+      setFormData({
+        name: lead.name,
+        email: lead.email || "",
+        phone: lead.phone || "",
+        notes: lead.notes || "",
+        status: lead.status,
+      });
+    }
+  }, [lead]);
+
+  if (!isTransitionFinished || isLoading) {
+    return <ContactDetailSkeleton />;
+  }
 
   // AI CRM Agent State
   const [aiLoading, setAiLoading] = useState(false);
@@ -115,52 +142,6 @@ export default function ContactDetailScreen() {
     });
   };
 
-  const loadLead = async () => {
-    try {
-      const db = await getDb();
-      const r = await db.getFirstAsync<RawSqlLead>(
-        "SELECT * FROM leads WHERE id = ?",
-        [id],
-      );
-      if (r) {
-        const leadData: Lead = {
-          id: r.id,
-          userId: r.user_id,
-          name: r.name,
-          email: r.email,
-          phone: r.phone,
-          status: r.status as LeadStatus,
-          value: r.value,
-          notes: r.notes,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        };
-        setLead(leadData);
-
-        // Bind form values
-        setFormData({
-          name: leadData.name,
-          email: leadData.email || "",
-          phone: leadData.phone || "",
-          notes: leadData.notes || "",
-          status: leadData.status,
-        });
-      } else {
-        showCustomAlert("Error", "Contact not found", "error", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
-      }
-    } catch (e) {
-      console.error("Failed to load contact details:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadLead();
-  }, [id]);
-
   const handleUpdate = async () => {
     const name = formData.name.trim();
     if (!name) {
@@ -183,7 +164,8 @@ export default function ContactDetailScreen() {
     try {
       await updateLocalLead(updated);
       setEditModalVisible(false);
-      await loadLead();
+      await queryClient.invalidateQueries({ queryKey: ["lead", id] });
+      await queryClient.invalidateQueries({ queryKey: ["leads"] });
       showCustomAlert("Success", "Contact details updated.", "success");
     } catch (err) {
       showCustomAlert("Error", "Could not save details", "error");
@@ -206,6 +188,7 @@ export default function ContactDetailScreen() {
           onPress: async () => {
             try {
               await deleteLocalLead(lead.id);
+              await queryClient.invalidateQueries({ queryKey: ["leads"] });
               showCustomAlert(
                 "Deleted",
                 "Contact removed successfully.",
@@ -233,7 +216,7 @@ export default function ContactDetailScreen() {
         else if (lead.status === "CONTACTED") score = 65;
 
         const grade = score >= 80 ? "A" : score >= 65 ? "B" : "C";
-        const summary = `Lead status is ${lead.status.toLowerCase()} with valuation $${lead.value.toLocaleString()}.`;
+        const summary = `Lead status is ${lead.status.toLowerCase()}.`;
         const proposedQuickReply = `Hi ${lead.name}, following up on our discussion!`;
 
         setAiResult({
@@ -301,20 +284,18 @@ export default function ContactDetailScreen() {
 
   const throttledSendMessage = useThrottle(handleSendMessage, 2000);
 
-  if (loading) {
+  if (!lead) {
     return (
       <Host style={{ flex: 1 }}>
         <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ marginTop: 12, color: colors.textSecondary }}>
-            Loading contact details...
-          </Text>
+          <Text style={{ color: colors.text, fontWeight: "bold" }}>Contact not found</Text>
+          <Pressable onPress={() => router.back()} style={{ marginTop: 12, padding: 12, backgroundColor: colors.primary, borderRadius: 10 }}>
+            <Text style={{ color: "#FFFFFF", fontWeight: "bold" }}>Go Back</Text>
+          </Pressable>
         </View>
       </Host>
     );
   }
-
-  if (!lead) return null;
 
   return (
     <Host style={{ flex: 1 }}>
