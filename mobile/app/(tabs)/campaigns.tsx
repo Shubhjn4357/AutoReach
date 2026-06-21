@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -32,6 +32,14 @@ import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
 import { getSecureItem, saveSecureItem } from "../../services/store";
 import { Host, Switch } from "@expo/ui";
+import DateTimePicker from "@expo/ui/community/datetime-picker";
+import {
+  hapticLight,
+  hapticMedium,
+  hapticHeavy,
+  hapticSuccess,
+  hapticWarning,
+} from "../../services/haptics";
 
 const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND_NOTIFICATION_TASK";
 
@@ -59,10 +67,17 @@ export default function CampaignsScreen() {
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
   const [newTemplateTitle, setNewTemplateTitle] = useState("");
   const [newTemplateBody, setNewTemplateBody] = useState("");
+  const [templateBodySelection, setTemplateBodySelection] = useState({ start: 0, end: 0 });
+  const templateBodyRef = useRef<any>(null);
 
   // Reminder Configuration State
   const [reminderEnabled, setReminderEnabled] = useState(false);
-  const [reminderTime, setReminderTime] = useState("09:00");
+  const [reminderTime, setReminderTime] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(9, 0, 0, 0);
+    return d;
+  });
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Reusable custom alert configuration
   const [alertConfig, setAlertConfig] = useState<{
@@ -111,9 +126,14 @@ export default function CampaignsScreen() {
 
       // Load reminder configuration
       const enabled = await getSecureItem("reminder_enabled");
-      const time = await getSecureItem("reminder_time");
+      const timeStr = await getSecureItem("reminder_time");
       setReminderEnabled(enabled === "true");
-      if (time) setReminderTime(time);
+      if (timeStr) {
+        const [h, m] = timeStr.split(":").map(Number);
+        const d = new Date();
+        d.setHours(h || 9, m || 0, 0, 0);
+        setReminderTime(d);
+      }
     } catch (e) {
       console.warn("Failed to load campaigns workspace", e);
     }
@@ -154,16 +174,32 @@ export default function CampaignsScreen() {
     const title = newTemplateTitle.trim();
     const body = newTemplateBody.trim();
     if (!title || !body) {
+      hapticWarning();
       showCustomAlert("Error", "Please fill in title and body", "error");
       return;
     }
     const newId = `t_${Math.random().toString(36).substring(2, 9)}`;
     await createLocalTemplate(newId, title, body);
+    hapticSuccess();
     setNewTemplateTitle("");
     setNewTemplateBody("");
+    setTemplateBodySelection({ start: 0, end: 0 });
     setTemplateModalVisible(false);
     await loadData();
     showCustomAlert("Success", "Template created successfully.", "success");
+  };
+
+  const insertVariable = (variable: string) => {
+    hapticLight();
+    const { start, end } = templateBodySelection;
+    const before = newTemplateBody.slice(0, start);
+    const after = newTemplateBody.slice(end);
+    const inserted = `${before}${variable}${after}`;
+    setNewTemplateBody(inserted);
+    const newPos = start + variable.length;
+    setTemplateBodySelection({ start: newPos, end: newPos });
+    // Keep focus on the input
+    templateBodyRef.current?.focus();
   };
 
   const handleDeleteTemplate = async (id: string) => {
@@ -272,13 +308,14 @@ export default function CampaignsScreen() {
 
   // Configure Daily Notifications Reminders
   const handleToggleReminder = async (enabled: boolean) => {
+    hapticMedium();
     setReminderEnabled(enabled);
     await saveSecureItem("reminder_enabled", enabled ? "true" : "false");
 
     if (enabled) {
-      const [hourStr, minStr] = reminderTime.split(":");
-      const hour = parseInt(hourStr) || 9;
-      const minute = parseInt(minStr) || 0;
+      const hour = reminderTime.getHours();
+      const minute = reminderTime.getMinutes();
+      const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 
       // Cancel previous alerts
       await Notifications.cancelAllScheduledNotificationsAsync();
@@ -316,7 +353,7 @@ export default function CampaignsScreen() {
 
         showCustomAlert(
           "Reminders Enabled",
-          `Scheduled daily follow-up notifications at ${reminderTime}.`,
+          `Scheduled daily follow-up notifications at ${timeStr}.`,
           "success",
         );
       } catch (e) {
@@ -346,26 +383,15 @@ export default function CampaignsScreen() {
     }
   };
 
-  const handleSaveReminderTime = async () => {
-    const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-    if (!timeRegex.test(reminderTime)) {
-      showCustomAlert(
-        "Invalid Time",
-        "Please use HH:MM 24h format (e.g. 09:30).",
-        "error",
-      );
-      return;
-    }
-
-    await saveSecureItem("reminder_time", reminderTime);
+  const handleTimeChange = async (date: Date) => {
+    setReminderTime(date);
+    const h = date.getHours();
+    const m = date.getMinutes();
+    const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    await saveSecureItem("reminder_time", timeStr);
+    // Re-schedule if already enabled
     if (reminderEnabled) {
       await handleToggleReminder(true);
-    } else {
-      showCustomAlert(
-        "Success",
-        "Reminder time preference updated.",
-        "success",
-      );
     }
   };
 
@@ -528,7 +554,7 @@ export default function CampaignsScreen() {
                 (stage) => (
                   <Pressable
                     key={stage}
-                    onPress={() => setTargetStage(stage)}
+                    onPress={() => { hapticLight(); setTargetStage(stage); }}
                     style={[
                       styles.filterBtn,
                       targetStage === stage
@@ -563,7 +589,7 @@ export default function CampaignsScreen() {
               {templates.map((t) => (
                 <Pressable
                   key={t.id}
-                  onPress={() => setSelectedTemplateId(t.id)}
+                  onPress={() => { hapticLight(); setSelectedTemplateId(t.id); }}
                   style={[
                     styles.templateSelectBtn,
                     selectedTemplateId === t.id
@@ -598,7 +624,7 @@ export default function CampaignsScreen() {
             </Text>
             <View style={styles.channelRow}>
               <Pressable
-                onPress={() => setCampaignChannel("whatsapp")}
+                onPress={() => { hapticLight(); setCampaignChannel("whatsapp"); }}
                 style={[
                   styles.channelBtn,
                   campaignChannel === "whatsapp"
@@ -634,7 +660,7 @@ export default function CampaignsScreen() {
               </Pressable>
 
               <Pressable
-                onPress={() => setCampaignChannel("sms")}
+                onPress={() => { hapticLight(); setCampaignChannel("sms"); }}
                 style={[
                   styles.channelBtn,
                   campaignChannel === "sms"
@@ -672,7 +698,7 @@ export default function CampaignsScreen() {
 
             {/* Trigger Button */}
             <Pressable
-              onPress={executeBulkCampaign}
+              onPress={() => { hapticHeavy(); executeBulkCampaign(); }}
               disabled={campaignLoading}
               style={[styles.triggerBtn, { backgroundColor: colors.primary }]}
             >
@@ -723,25 +749,43 @@ export default function CampaignsScreen() {
               />
             </View>
 
-            {/* Time Picker config */}
+            {/* Native Time Picker */}
             <View style={styles.timePickerContainer}>
-              <TextInput
-                value={reminderTime}
-                onChangeText={setReminderTime}
-                placeholder="e.g. 09:00"
-                placeholderTextColor={colors.textMuted}
-                style={[glassInputStyle, styles.timeInput]}
-              />
-              <Pressable
-                onPress={handleSaveReminderTime}
-                style={[
-                  styles.saveTimeBtn,
-                  { backgroundColor: colors.primary },
-                ]}
-              >
-                <Text style={styles.saveTimeBtnText}>Set Time</Text>
-              </Pressable>
+              <View style={[
+                styles.timeDisplayBtn,
+                {
+                  backgroundColor: colors.primarySoft,
+                  borderColor: colors.primary + "40",
+                }
+              ]}>
+                <Ionicons name="time-outline" size={18} color={colors.primary} />
+                <Text style={[styles.timeDisplayText, { color: colors.primary }]}>
+                  {String(reminderTime.getHours()).padStart(2, "0")}:{String(reminderTime.getMinutes()).padStart(2, "0")}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <DateTimePicker
+                  value={reminderTime}
+                  mode="time"
+                  onChange={(event: any, date?: Date) => {
+                    if (date) handleTimeChange(date);
+                  }}
+                  display="spinner"
+                />
+              </View>
             </View>
+
+            {reminderEnabled && (
+              <View style={[
+                styles.reminderActiveBadge,
+                { backgroundColor: colors.successSoft, borderColor: colors.success + "40" }
+              ]}>
+                <Ionicons name="notifications" size={14} color={colors.success} />
+                <Text style={{ fontSize: 12, color: colors.success, fontWeight: "600", marginLeft: 6 }}>
+                  Active · Daily at {String(reminderTime.getHours()).padStart(2, "0")}:{String(reminderTime.getMinutes()).padStart(2, "0")}
+                </Text>
+              </View>
+            )}
           </View>
         </ScrollView>
 
@@ -759,7 +803,7 @@ export default function CampaignsScreen() {
                   {
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
-                    borderWidth: 1,
+                    borderWidth: 1.5,
                   },
                 ]}
               >
@@ -784,10 +828,55 @@ export default function CampaignsScreen() {
                   style={[glassInputStyle, styles.input]}
                 />
 
+                {/* Variable Chip Buttons */}
+                <View style={styles.varChipsLabel}>
+                  <Ionicons name="code-slash-outline" size={13} color={colors.primary} />
+                  <Text style={[styles.varChipsLabelText, { color: colors.textSecondary }]}>
+                    Tap to insert variable
+                  </Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.varChipsScroll}
+                  contentContainerStyle={styles.varChipsRow}
+                  keyboardShouldPersistTaps="always"
+                >
+                  {[
+                    { label: "[Name]", color: colors.primary },
+                    { label: "[Phone]", color: colors.accent },
+                    { label: "[Value]", color: colors.success },
+                    { label: "[Email]", color: colors.warning },
+                    { label: "[Date]", color: colors.danger },
+                    { label: "[Company]", color: colors.textSecondary },
+                  ].map((v) => (
+                    <Pressable
+                      key={v.label}
+                      onPress={() => insertVariable(v.label)}
+                      style={[
+                        styles.varChip,
+                        {
+                          backgroundColor: `${v.color}18`,
+                          borderColor: `${v.color}50`,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.varChipText, { color: v.color }]}>
+                        {v.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
                 <TextInput
+                  ref={templateBodyRef}
                   value={newTemplateBody}
                   onChangeText={setNewTemplateBody}
-                  placeholder="Message Body. Use [Name] and [Value] to personalize."
+                  onSelectionChange={(e) =>
+                    setTemplateBodySelection(e.nativeEvent.selection)
+                  }
+                  selection={templateBodySelection}
+                  placeholder="Message body. Tap {} chips above to insert variables."
                   placeholderTextColor={colors.textMuted}
                   multiline
                   style={[glassInputStyle, styles.input, styles.multilineInput]}
@@ -797,6 +886,7 @@ export default function CampaignsScreen() {
                   onPress={handleSaveTemplate}
                   style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 >
+                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                   <Text style={styles.saveBtnText}>Save Template</Text>
                 </Pressable>
               </View>
@@ -1055,20 +1145,82 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   multilineInput: {
-    height: 80,
+    height: 110,
     textAlignVertical: "top",
   },
   saveBtn: {
-    height: 44,
-    borderRadius: 10,
+    height: 48,
+    borderRadius: 14,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    gap: 6,
     marginTop: 16,
     width: "100%",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   saveBtnText: {
     color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "800",
+  },
+  varChipsLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 6,
+  },
+  varChipsLabelText: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  varChipsScroll: {
+    marginBottom: 10,
+  },
+  varChipsRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingBottom: 4,
+  },
+  varChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  varChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+
+  timeDisplayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignSelf: "flex-start",
+  },
+  timeDisplayText: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  reminderActiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
   },
 });

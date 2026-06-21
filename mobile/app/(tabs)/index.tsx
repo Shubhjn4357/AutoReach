@@ -35,6 +35,14 @@ import * as Contacts from "expo-contacts";
 import * as Linking from "expo-linking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounce } from "../../hook/useDebounce";
+import {
+  hapticLight,
+  hapticMedium,
+  hapticHeavy,
+  hapticSuccess,
+  hapticWarning,
+  hapticError,
+} from "../../services/haptics";
 
 interface LeadCreateFormData {
   name: string;
@@ -46,7 +54,7 @@ interface LeadCreateFormData {
 
 export default function LeadsScreen() {
   const router = useRouter();
-  const { theme, toggleTheme, colors, glassStyle, glassInputStyle } =
+  const { theme, toggleTheme, colors, clayStyle, clayInputStyle, clayCardStyle, glassStyle, glassInputStyle } =
     useTheme();
   const insets = useSafeAreaInsets();
 
@@ -448,8 +456,8 @@ export default function LeadsScreen() {
   return (
     <Host style={{ flex: 1 }}>
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        {/* Clay Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.bg }]}>
           <Pressable
             onPress={() => {
               setTempProfileName(profileName);
@@ -457,91 +465,105 @@ export default function LeadsScreen() {
             }}
             style={styles.profileBtn}
           >
-            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+            <View style={[
+              styles.avatar,
+              {
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.4,
+                shadowRadius: 8,
+                elevation: 6,
+              }
+            ]}>
               <Text style={styles.avatarText}>
                 {profileName.charAt(0).toUpperCase()}
               </Text>
             </View>
             <View>
               <Text
-                style={{ fontSize: 14, fontWeight: "bold", color: colors.text }}
+                style={{ fontSize: 15, fontWeight: "800", color: colors.text, letterSpacing: -0.3 }}
               >
                 {profileName}
               </Text>
-              <Text style={{ fontSize: 10, color: colors.textSecondary }}>
-                System Agent
+              <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "500" }}>
+                AutoReach Pro
               </Text>
             </View>
           </Pressable>
 
           <View style={{ flex: 1 }} />
 
-          <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <Pressable
-              onPress={handleImportDeviceContacts}
-              style={styles.iconBtn}
+              onPress={() => { hapticLight(); handleImportDeviceContacts(); }}
+              style={[styles.iconBtn, { backgroundColor: colors.primarySoft }]}
               accessibilityLabel="Sync Device Contacts"
             >
-              <Ionicons
-                name="people-outline"
-                size={20}
-                color={colors.primary}
-              />
+              <Ionicons name="people-outline" size={18} color={colors.primary} />
             </Pressable>
             <Pressable
               onPress={() => {
+                hapticLight();
                 setIsBulkMode(!isBulkMode);
                 setSelectedLeadIds([]);
               }}
               style={[
                 styles.iconBtn,
-                isBulkMode && { backgroundColor: `${colors.primary}33` },
+                { backgroundColor: isBulkMode ? colors.primarySoft : colors.accentSoft },
               ]}
               accessibilityLabel="Toggle Bulk Mode"
             >
               <Ionicons
                 name={isBulkMode ? "checkbox" : "checkbox-outline"}
-                size={20}
-                color={isBulkMode ? colors.accent : colors.primary}
+                size={18}
+                color={isBulkMode ? colors.primary : colors.accent}
               />
             </Pressable>
             <Pressable
-              onPress={handleSync}
+              onPress={() => { hapticMedium(); handleSync(); }}
               disabled={syncing}
               style={[
                 styles.iconBtn,
-                {
-                  backgroundColor: syncing
-                    ? `${colors.primary}1A`
-                    : "transparent",
-                },
+                { backgroundColor: queueSize > 0 ? colors.warningSoft : colors.primarySoft },
               ]}
             >
               <Ionicons
                 name="sync"
-                size={20}
+                size={18}
                 color={queueSize > 0 ? colors.warning : colors.primary}
               />
             </Pressable>
-            <Pressable onPress={toggleTheme} style={styles.iconBtn}>
+            <Pressable onPress={() => { hapticLight(); toggleTheme(); }} style={[styles.iconBtn, { backgroundColor: colors.accentSoft }]}>
               <Ionicons
                 name={theme === "dark" ? "sunny-outline" : "moon-outline"}
-                size={20}
-                color={colors.primary}
+                size={18}
+                color={colors.accent}
               />
             </Pressable>
           </View>
         </View>
 
-        {/* Search Bar */}
+        {/* Clay Search Bar */}
         <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search leads by name, email or phone..."
-            placeholderTextColor={colors.textMuted}
-            style={glassInputStyle}
-          />
+          <View style={[
+            clayInputStyle,
+            { flexDirection: "row", alignItems: "center", gap: 10, height: 50 }
+          ]}>
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search contacts..."
+              placeholderTextColor={colors.textMuted}
+              style={{ flex: 1, color: colors.text, fontSize: 15, fontWeight: "500" }}
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Filter Stage Selector */}
@@ -558,23 +580,36 @@ export default function LeadsScreen() {
             return (
               <Pressable
                 key={stage}
-                onPress={() => setActiveStageFilter(stage)}
+                onPress={() => { hapticLight(); setActiveStageFilter(stage); }}
                 style={[
                   styles.filterBtn,
                   isSelected
-                    ? { backgroundColor: colors.primary }
+                    ? {
+                        backgroundColor: colors.primary,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 8,
+                        elevation: 6,
+                      }
                     : {
-                        backgroundColor: colors.surface,
+                        backgroundColor: colors.card,
                         borderColor: colors.border,
-                        borderWidth: 1,
+                        borderWidth: 1.5,
+                        shadowColor: colors.clayShadowDark,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.12,
+                        shadowRadius: 6,
+                        elevation: 3,
                       },
                 ]}
               >
                 <Text
                   style={{
                     fontSize: 12,
-                    fontWeight: "600",
+                    fontWeight: "700",
                     color: isSelected ? "#FFFFFF" : colors.textSecondary,
+                    letterSpacing: 0.3,
                   }}
                 >
                   {stage}
@@ -617,36 +652,65 @@ export default function LeadsScreen() {
           ) : (
             filteredLeads.map((lead) => {
               const isSelected = selectedLeadIds.includes(lead.id);
+              const statusColor =
+                lead.status === "WON"
+                  ? colors.success
+                  : lead.status === "LOST"
+                  ? colors.danger
+                  : lead.status === "QUALIFIED"
+                  ? colors.accent
+                  : lead.status === "CONTACTED"
+                  ? colors.warning
+                  : colors.primary;
+              const statusBg =
+                lead.status === "WON"
+                  ? colors.successSoft
+                  : lead.status === "LOST"
+                  ? colors.dangerSoft
+                  : lead.status === "QUALIFIED"
+                  ? colors.accentSoft
+                  : lead.status === "CONTACTED"
+                  ? colors.warningSoft
+                  : colors.primarySoft;
+
               return (
                 <Pressable
                   key={lead.id}
                   onPress={() => {
                     if (isBulkMode) {
+                      hapticLight();
                       setSelectedLeadIds((prev) =>
                         prev.includes(lead.id)
                           ? prev.filter((id) => id !== lead.id)
                           : [...prev, lead.id],
                       );
                     } else {
+                      hapticMedium();
                       router.push(`/contact/${lead.id}`);
                     }
                   }}
                   style={[
-                    glassStyle,
                     styles.leadCard,
-                    { backgroundColor: colors.surface },
-                    isBulkMode &&
-                      isSelected && {
-                        borderColor: colors.primary,
-                        borderWidth: 1,
-                      },
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: isSelected ? colors.primary : colors.border,
+                      borderWidth: isSelected ? 2 : 1.5,
+                      shadowColor: isSelected ? colors.primary : colors.clayShadowDark,
+                      shadowOffset: { width: 0, height: 6 },
+                      shadowOpacity: isSelected ? 0.3 : 0.15,
+                      shadowRadius: 14,
+                      elevation: isSelected ? 10 : 6,
+                    },
                   ]}
                 >
+                  {/* Colored left accent */}
+                  <View style={[styles.cardAccent, { backgroundColor: statusColor }]} />
                   <View
                     style={{
                       flexDirection: "row",
                       width: "100%",
                       alignItems: "center",
+                      paddingLeft: 12,
                     }}
                   >
                     {isBulkMode && (
@@ -658,61 +722,28 @@ export default function LeadsScreen() {
                         />
                       </View>
                     )}
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontWeight: "bold",
-                          color: colors.text,
-                        }}
-                      >
-                        {lead.name}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          color: colors.textSecondary,
-                          marginTop: 2,
-                        }}
-                      >
-                        {lead.email || "No email"}
+                    <View style={[
+                      styles.contactAvatar,
+                      { backgroundColor: statusBg }
+                    ]}>
+                      <Text style={{ color: statusColor, fontWeight: "800", fontSize: 16 }}>
+                        {lead.name.charAt(0).toUpperCase()}
                       </Text>
                     </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: "bold",
-                          color: colors.primary,
-                        }}
-                      >
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.text, letterSpacing: -0.2 }}>
+                        {lead.name}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, fontWeight: "500" }}>
+                        {lead.phone || lead.email || "No contact info"}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end", gap: 4 ,paddingHorizontal:8}}>
+                      <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>
                         ${lead.value.toLocaleString()}
                       </Text>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor:
-                              lead.status === "WON"
-                                ? `${colors.success}20`
-                                : lead.status === "LOST"
-                                  ? `${colors.danger}20`
-                                  : `${colors.primary}20`,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 9,
-                            fontWeight: "bold",
-                            color:
-                              lead.status === "WON"
-                                ? colors.success
-                                : lead.status === "LOST"
-                                  ? colors.danger
-                                  : colors.primary,
-                          }}
-                        >
+                      <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                        <Text style={{ fontSize: 9, fontWeight: "800", color: statusColor, letterSpacing: 0.5 }}>
                           {lead.status}
                         </Text>
                       </View>
@@ -724,12 +755,22 @@ export default function LeadsScreen() {
           )}
         </ScrollView>
 
-        {/* Floating Action Button */}
+        {/* Clay FAB */}
         <Pressable
-          onPress={openDrawer}
-          style={[styles.fab, { backgroundColor: colors.primary }]}
+          onPress={() => { hapticHeavy(); openDrawer(); }}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.primary,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.5,
+              shadowRadius: 16,
+              elevation: 14,
+            },
+          ]}
         >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
+          <Ionicons name="add" size={30} color="#FFFFFF" />
         </Pressable>
 
         {/* Create Contact Drawer Modal */}
@@ -749,6 +790,11 @@ export default function LeadsScreen() {
                     transform: [{ translateY: slideAnim }],
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
+                    shadowColor: colors.clayShadowDark,
+                    shadowOffset: { width: 0, height: -8 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 20,
+                    elevation: 20,
                   },
                 ]}
               >
@@ -866,7 +912,7 @@ export default function LeadsScreen() {
                   />
 
                   <Pressable
-                    onPress={handleCreateLead}
+                    onPress={() => { hapticMedium(); handleCreateLead(); }}
                     style={[
                       styles.saveBtn,
                       { backgroundColor: colors.primary },
@@ -1563,19 +1609,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   iconBtn: {
-    padding: 8,
-    borderRadius: 8,
+    padding: 9,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   filtersScroll: {
     maxHeight: 44,
     marginBottom: 8,
   },
   filterBtn: {
-    paddingHorizontal: 16,
-    height: 36,
-    borderRadius: 18,
+    paddingHorizontal: 18,
+    height: 38,
+    borderRadius: 19,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1585,31 +1635,42 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   leadCard: {
-    padding: 16,
-    borderWidth: 1,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingRight: 16,
+    paddingLeft: 0,
+    borderRadius: 22,
     width: "100%",
+    overflow: "hidden",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  cardAccent: {
+    width: 5,
+    height: "65%",
+    borderRadius: 3,
+    marginLeft: 12,
+  },
+  contactAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
   },
   statusBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 90,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    bottom: 96,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
   },
   drawerOverlay: {
     flex: 1,
@@ -1621,86 +1682,85 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
   },
   drawerContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     padding: 24,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   drawerHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   drawerInput: {
-    height: 44,
     marginBottom: 12,
   },
   statusSelectContainer: {
     marginBottom: 16,
   },
   statusPill: {
-    paddingHorizontal: 12,
-    height: 32,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 34,
+    borderRadius: 17,
     justifyContent: "center",
     alignItems: "center",
   },
   saveBtn: {
-    height: 44,
-    borderRadius: 10,
+    height: 52,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   modalOverlay: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
     paddingHorizontal: 24,
   },
   modalCard: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     padding: 24,
-    borderRadius: 20,
+    borderRadius: 28,
     width: "100%",
   },
   modalCancelBtn: {
     flex: 1,
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
   modalSaveBtn: {
     flex: 1,
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
   bulkActionBar: {
     position: "absolute",
-    bottom: 88,
+    bottom: 96,
     left: 16,
     right: 16,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 24,
+    borderWidth: 1.5,
     padding: 16,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
+    elevation: 12,
     zIndex: 999,
   },
   bulkActionBtn: {
     flex: 1,
-    height: 40,
-    borderRadius: 10,
+    height: 44,
+    borderRadius: 14,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
@@ -1709,16 +1769,16 @@ const styles = StyleSheet.create({
   bulkActionBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "bold",
+    fontWeight: "800",
   },
   bulkTextBtn: {
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
   templateSelectItem: {
-    borderWidth: 1,
-    padding: 10,
-    borderRadius: 8,
+    borderWidth: 1.5,
+    padding: 12,
+    borderRadius: 14,
     marginBottom: 8,
   },
 });

@@ -5,99 +5,150 @@ import {
   StyleSheet,
   Animated,
   Dimensions,
-  Platform,
+  Text,
 } from "react-native";
 import { Tabs } from "expo-router";
 import { useTheme } from "../../services/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { hapticLight } from "../../services/haptics";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-function CustomTabBar({ state, descriptors, navigation }: any) {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+const TAB_CONFIG = [
+  {
+    name: "index",
+    label: "Leads",
+    icon: "people" as const,
+    iconOutline: "people-outline" as const,
+  },
+  {
+    name: "crm",
+    label: "CRM",
+    icon: "funnel" as const,
+    iconOutline: "funnel-outline" as const,
+  },
+  {
+    name: "campaigns",
+    label: "Reach",
+    icon: "megaphone" as const,
+    iconOutline: "megaphone-outline" as const,
+  },
+  {
+    name: "settings",
+    label: "Settings",
+    icon: "settings" as const,
+    iconOutline: "settings-outline" as const,
+  },
+];
 
-  const paddingHorizontal = 24;
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const isDark = theme === "dark";
+
+  const paddingHorizontal = 20;
   const barWidth = SCREEN_WIDTH - paddingHorizontal * 2;
   const tabWidth = barWidth / state.routes.length;
 
   const animationX = useRef(new Animated.Value(0)).current;
+  const scaleAnims = useRef(
+    state.routes.map(() => new Animated.Value(1))
+  ).current;
 
   useEffect(() => {
     Animated.spring(animationX, {
       toValue: state.index * tabWidth,
       useNativeDriver: true,
-      tension: 68,
-      friction: 12,
+      tension: 80,
+      friction: 14,
     }).start();
+
+    // Scale up active tab
+    state.routes.forEach((_: any, i: number) => {
+      Animated.spring(scaleAnims[i], {
+        toValue: state.index === i ? 1.15 : 1,
+        useNativeDriver: true,
+        tension: 80,
+        friction: 10,
+      }).start();
+    });
   }, [state.index]);
 
   return (
-    <View
-      style={[
-        styles.tabBarContainer,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          bottom: 20 + insets.bottom,
-          left: paddingHorizontal,
-          right: paddingHorizontal,
-          width: barWidth,
-        },
-      ]}
-    >
-      {/* Sliding Active Pill Indicator */}
-      <Animated.View
+    <View style={[styles.tabBarWrapper, { bottom: 16 + insets.bottom }]}>
+      <View
         style={[
-          styles.slidingPill,
+          styles.tabBarContainer,
           {
-            width: tabWidth - 12,
-            transform: [{ translateX: Animated.add(animationX, 6) }],
-            backgroundColor: `${colors.primary}1A`, // Subtle active background color
-            borderColor: colors.primary,
-            borderWidth: 1,
+            backgroundColor: isDark ? colors.card : "#FFFFFF",
+            width: barWidth,
+            shadowColor: isDark ? "rgba(0,0,0,0.8)" : colors.clayShadowDark,
           },
         ]}
-      />
+      >
+        {/* Clay Active Pill */}
+        <Animated.View
+          style={[
+            styles.activePill,
+            {
+              width: tabWidth - 16,
+              transform: [{ translateX: Animated.add(animationX, 8) }],
+              backgroundColor: colors.primary,
+              shadowColor: colors.primary,
+            },
+          ]}
+        />
 
-      {state.routes.map((route: any, index: number) => {
-        const { options } = descriptors[route.key];
-        const isFocused = state.index === index;
+        {state.routes.map((route: any, index: number) => {
+          const isFocused = state.index === index;
+          const tab = TAB_CONFIG.find((t) => t.name === route.name);
 
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
+          const onPress = () => {
+            hapticLight();
+            const event = navigation.emit({
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
+            });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
 
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
-
-        let iconName: keyof typeof Ionicons.glyphMap = "people-outline";
-        if (route.name === "index") {
-          iconName = isFocused ? "people" : "people-outline";
-        } else if (route.name === "crm") {
-          iconName = isFocused ? "funnel" : "funnel-outline";
-        } else if (route.name === "campaigns") {
-          iconName = isFocused ? "megaphone" : "megaphone-outline";
-        } else if (route.name === "settings") {
-          iconName = isFocused ? "settings" : "settings-outline";
-        }
-
-        return (
-          <Pressable key={route.key} onPress={onPress} style={styles.tabItem}>
-            <Ionicons
-              name={iconName}
-              size={20}
-              color={isFocused ? colors.primary : colors.textSecondary}
-            />
-          </Pressable>
-        );
-      })}
+          return (
+            <Pressable
+              key={route.key}
+              onPress={onPress}
+              style={[styles.tabItem, { width: tabWidth }]}
+            >
+              <Animated.View
+                style={[
+                  styles.tabInner,
+                  { transform: [{ scale: scaleAnims[index] }] },
+                ]}
+              >
+                <Ionicons
+                  name={tab ? (isFocused ? tab.icon : tab.iconOutline) : "ellipse-outline"}
+                  size={20}
+                  color={isFocused ? "#FFFFFF" : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: isFocused ? "#FFFFFF" : colors.textSecondary,
+                      fontWeight: isFocused ? "700" : "500",
+                    },
+                  ]}
+                >
+                  {tab?.label ?? route.name}
+                </Text>
+              </Animated.View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -110,61 +161,56 @@ export default function TabsLayout() {
         headerShown: false,
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Contacts",
-        }}
-      />
-      <Tabs.Screen
-        name="crm"
-        options={{
-          title: "CRM",
-        }}
-      />
-      <Tabs.Screen
-        name="campaigns"
-        options={{
-          title: "Campaigns",
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Leads" }} />
+      <Tabs.Screen name="crm" options={{ title: "CRM" }} />
+      <Tabs.Screen name="campaigns" options={{ title: "Campaigns" }} />
+      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBarContainer: {
+  tabBarWrapper: {
     position: "absolute",
-    height: 56,
-    borderRadius: 28,
+    left: 0,
+    right: 0,
+    alignItems: "center",   // centres the inner fixed-width bar
+  },
+  tabBarContainer: {
+    height: 64,
+    borderRadius: 32,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    borderWidth: 1,
-    shadowColor: "#000",
+    overflow: "hidden",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+  activePill: {
+    position: "absolute",
+    height: 48,
+    borderRadius: 24,
+    top: 8,
+    left: 0,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 8,
-    overflow: "hidden",
-  },
-  slidingPill: {
-    position: "absolute",
-    height: 40,
-    borderRadius: 20,
-    top: 7,
-    left: 0,
   },
   tabItem: {
-    flex: 1,
-    height: "100%",
+    height: 64,
     justifyContent: "center",
     alignItems: "center",
   },
+  tabInner: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  tabLabel: {
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
 });
+

@@ -139,7 +139,7 @@ function InnerRootLayout() {
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen
           name="contact/[id]"
-          options={{ title: "Contact Details" }}
+          options={{ headerShown:false }}
         />
       </Stack>
     </Host>

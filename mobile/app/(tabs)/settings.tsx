@@ -12,19 +12,35 @@ import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
 import { getQueuedOperations, getLocalLeads } from "../../services/db";
 import { executeSyncCycle } from "../../services/sync";
-import { removeSecureItem } from "../../services/store";
+import { removeSecureItem, saveSecureItem, getSecureItem } from "../../services/store";
 import { triggerLocalNotification } from "../../services/notifications";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { Host } from "@expo/ui";
+import {
+  hapticMedium,
+  hapticHeavy,
+  hapticSuccess,
+  hapticWarning,
+  hapticError,
+} from "../../services/haptics";
 
 export default function SettingsScreen() {
   const store = useAppStore();
-  const { colors, glassStyle, glassInputStyle } = useTheme();
+  const { colors, glassStyle, glassInputStyle, clayStyle, clayInputStyle } = useTheme();
 
   const [syncQueueSize, setSyncQueueSize] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
   const [tempApiUrl, setTempApiUrl] = useState(store.apiUrl);
   const [syncing, setSyncing] = useState(false);
+
+  // Gemini AI / BYOK State
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [tempGeminiKey, setTempGeminiKey] = useState("");
+  const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
+  const [geminiConnected, setGeminiConnected] = useState(false);
+  const [geminiTesting, setGeminiTesting] = useState(false);
 
   // Custom Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -68,19 +84,84 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     loadStats();
+    // Load saved Gemini key
+    (async () => {
+      const savedKey = await getSecureItem("gemini_api_key");
+      if (savedKey) {
+        setGeminiApiKey(savedKey);
+        setTempGeminiKey(savedKey);
+        setGeminiConnected(true);
+      }
+    })();
   }, [store.apiUrl]);
 
   const handleSaveApi = () => {
     if (!tempApiUrl.trim()) return;
+    hapticMedium();
     store.setApiUrl(tempApiUrl.trim());
+    hapticSuccess();
     showCustomAlert("Success", "API Endpoint updated successfully.", "success");
   };
 
+  const handleSaveGeminiKey = async () => {
+    const key = tempGeminiKey.trim();
+    if (!key) {
+      showCustomAlert("Error", "Please enter your Gemini API key", "error");
+      return;
+    }
+    setGeminiTesting(true);
+    try {
+      // Quick validation ping to Gemini
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+      );
+      if (res.ok) {
+        await saveSecureItem("gemini_api_key", key);
+        setGeminiApiKey(key);
+        setGeminiConnected(true);
+        hapticSuccess();
+        showCustomAlert("Connected!", "Gemini AI is now active. Your API key is stored securely.", "success");
+      } else {
+        hapticError();
+        showCustomAlert("Invalid Key", "Could not validate the API key. Please check and try again.", "error");
+      }
+    } catch {
+      hapticWarning();
+      showCustomAlert("Network Error", "Could not reach Google API. Check your internet connection.", "warning");
+    } finally {
+      setGeminiTesting(false);
+    }
+  };
+
+  const handleDisconnectGemini = async () => {
+    showCustomAlert(
+      "Disconnect Gemini",
+      "Remove your Gemini API key from this device?",
+      "warning",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            await saveSecureItem("gemini_api_key", "");
+            setGeminiApiKey("");
+            setTempGeminiKey("");
+            setGeminiConnected(false);
+            showCustomAlert("Disconnected", "Gemini API key removed.", "info");
+          },
+        },
+      ],
+    );
+  };
+
   const handleManualSync = async () => {
+    hapticMedium();
     setSyncing(true);
     const result = await executeSyncCycle();
     setSyncing(false);
     if (result.success) {
+      hapticSuccess();
       showCustomAlert(
         "Sync Complete",
         `Successfully synchronized ${result.syncedCount} offline operations.`,
@@ -101,6 +182,7 @@ export default function SettingsScreen() {
   };
 
   const handleWipeData = async () => {
+    hapticHeavy();
     showCustomAlert(
       "Confirm Wipe",
       "Are you absolutely sure you want to clear all offline caches and databases from this device?",
@@ -218,6 +300,108 @@ export default function SettingsScreen() {
                 <Text style={styles.saveBtnText}>Save</Text>
               </Pressable>
             </View>
+          </View>
+
+          {/* Gemini AI Integration */}
+          <View
+            style={[
+              glassStyle,
+              styles.sectionCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 8 }}>
+              <View style={[
+                styles.geminiIcon,
+                { backgroundColor: geminiConnected ? colors.successSoft : colors.primarySoft }
+              ]}>
+                <Text style={{ fontSize: 16 }}>✦</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                  Gemini AI
+                </Text>
+                <Text style={[styles.rowLabel, {
+                  color: geminiConnected ? colors.success : colors.textMuted,
+                  fontWeight: "600",
+                  marginTop: 1,
+                }]}>
+                  {geminiConnected ? "● Connected" : "○ Not connected"}
+                </Text>
+              </View>
+              {geminiConnected && (
+                <Pressable
+                  onPress={handleDisconnectGemini}
+                  style={[styles.disconnectBtn, { borderColor: colors.danger + "60" }]}
+                >
+                  <Text style={{ fontSize: 11, color: colors.danger, fontWeight: "700" }}>Disconnect</Text>
+                </Pressable>
+              )}
+            </View>
+
+            {geminiConnected ? (
+              <View style={[
+                styles.connectedBanner,
+                { backgroundColor: colors.successSoft, borderColor: colors.success + "40" }
+              ]}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                <Text style={{ color: colors.success, fontSize: 12, fontWeight: "600", marginLeft: 8 }}>
+                  AI features are active
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 6 }]}>
+                  Bring Your Own Key (BYOK)
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <TextInput
+                    value={tempGeminiKey}
+                    onChangeText={setTempGeminiKey}
+                    placeholder="AIza..."
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry={!geminiKeyVisible}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[glassInputStyle, { flex: 1, height: 44 }]}
+                  />
+                  <Pressable
+                    onPress={() => setGeminiKeyVisible((v) => !v)}
+                    style={[styles.eyeBtn, { backgroundColor: colors.primarySoft }]}
+                  >
+                    <Ionicons
+                      name={geminiKeyVisible ? "eye-off-outline" : "eye-outline"}
+                      size={18}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+                </View>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <Pressable
+                    onPress={handleSaveGeminiKey}
+                    disabled={geminiTesting}
+                    style={[
+                      styles.saveBtn,
+                      { backgroundColor: geminiTesting ? colors.textMuted : colors.primary, flex: 1 },
+                    ]}
+                  >
+                    <Text style={styles.saveBtnText}>
+                      {geminiTesting ? "Validating..." : "Connect"}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => Linking.openURL("https://aistudio.google.com/app/apikey")}
+                    style={[
+                      styles.getKeyBtn,
+                      { borderColor: colors.primary + "60", backgroundColor: colors.primarySoft },
+                    ]}
+                  >
+                    <Ionicons name="open-outline" size={14} color={colors.primary} />
+                    <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "700" }}>Get Key</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
 
           {/* Database Cache Stats */}
@@ -371,8 +555,8 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     paddingHorizontal: 16,
-    height: 40,
-    borderRadius: 8,
+    height: 44,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -380,6 +564,42 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "bold",
+  },
+  geminiIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  disconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  connectedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  eyeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  getKeyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   actionButtonsRow: {
     flexDirection: "row",

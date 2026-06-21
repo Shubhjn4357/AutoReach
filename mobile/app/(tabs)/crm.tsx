@@ -18,6 +18,13 @@ import { Lead, LeadStatus } from "../../shared/types";
 import { calculatePipelineMetrics } from "../../shared/crm";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Host } from "@expo/ui";
+import {
+  hapticLight,
+  hapticMedium,
+  hapticWarning,
+  hapticHeavy,
+  hapticSuccess,
+} from "../../services/haptics";
 
 export default function CRMPipelinesScreen() {
   const { colors, glassStyle } = useTheme();
@@ -70,6 +77,7 @@ export default function CRMPipelinesScreen() {
   }, []);
 
   const changeLeadStatus = async (lead: Lead, nextStatus: LeadStatus) => {
+    hapticMedium();
     const updated: Lead = {
       ...lead,
       status: nextStatus,
@@ -77,14 +85,16 @@ export default function CRMPipelinesScreen() {
     };
     await updateLocalLead(updated);
     await loadData();
+    hapticSuccess();
     showCustomAlert(
-      "Success",
-      `Lead "${lead.name}" moved to ${nextStatus}.`,
+      "Updated!",
+      `${lead.name} moved to ${nextStatus}.`,
       "success",
     );
   };
 
   const handleDelete = async (id: string) => {
+    hapticHeavy();
     showCustomAlert(
       "Confirm Delete",
       "Are you sure you want to delete this lead?",
@@ -206,7 +216,7 @@ export default function CRMPipelinesScreen() {
               return (
                 <Pressable
                   key={stage}
-                  onPress={() => setFilterStatus(stage)}
+                  onPress={() => { hapticLight(); setFilterStatus(stage); }}
                   style={[
                     styles.stageBtn,
                     isSelected
@@ -309,7 +319,8 @@ export default function CRMPipelinesScreen() {
                     <View style={styles.leftActions}>
                       {lead.status !== "WON" && (
                         <Pressable
-                          onPress={() =>
+                          onPress={() => {
+                            hapticMedium();
                             changeLeadStatus(
                               lead,
                               lead.status === "NEW"
@@ -317,8 +328,8 @@ export default function CRMPipelinesScreen() {
                                 : lead.status === "CONTACTED"
                                   ? "QUALIFIED"
                                   : "WON",
-                            )
-                          }
+                            );
+                          }}
                           style={[
                             styles.actionBtn,
                             {
@@ -335,13 +346,13 @@ export default function CRMPipelinesScreen() {
                               color: colors.primary,
                             }}
                           >
-                            Advance Stage ➔
+                            Next Stage ➔
                           </Text>
                         </Pressable>
                       )}
                       {lead.status !== "LOST" && lead.status !== "WON" && (
                         <Pressable
-                          onPress={() => changeLeadStatus(lead, "LOST")}
+                          onPress={() => { hapticWarning(); changeLeadStatus(lead, "LOST"); }}
                           style={[
                             styles.actionBtn,
                             {
@@ -358,7 +369,7 @@ export default function CRMPipelinesScreen() {
                               color: colors.danger,
                             }}
                           >
-                            Mark Lost
+                            Mark Fail
                           </Text>
                         </Pressable>
                       )}
