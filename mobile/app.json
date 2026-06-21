@@ -6,6 +6,13 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "autoreach",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff",
+      "imageWidth": 642
+    },
     "platforms": [
       "ios",
       "android",
@@ -16,7 +23,14 @@
       "bundleIdentifier": "com.shubhjn.autoreach"
     },
     "android": {
-      "package": "com.shubhjn.autoreach"
+      "package": "com.shubhjn.autoreach",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
