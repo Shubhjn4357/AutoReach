@@ -20,11 +20,11 @@ RUN pnpm install --no-frozen-lockfile
 RUN pnpm run web:build
 
 # Expose Next.js server port
-EXPOSE 3000
+EXPOSE 8080
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8080
 
 # Run the stateful Express server using tsx
 CMD ["pnpm", "run", "web:start"]

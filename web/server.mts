@@ -24,8 +24,12 @@ app.prepare().then(async () => {
 
   // Middleware
   server.use(cors());
-  server.use(express.json({ limit: "50mb" }));
-  server.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+  // Body parser middleware applied only to specific Express POST endpoints
+  const parseBody = [
+    express.json({ limit: "50mb" }),
+    express.urlencoded({ extended: true, limit: "50mb" })
+  ];
 
   // Initialize WhatsApp Manager singleton and resume active sessions
   const waManager = WhatsAppManager.getInstance();
@@ -113,7 +117,7 @@ app.prepare().then(async () => {
   });
 
   // Start the connection loop
-  server.post("/api/whatsapp/connect", async (req, res) => {
+  server.post("/api/whatsapp/connect", parseBody, async (req, res) => {
     try {
       await waManager.connect("default");
       return res.json({ success: true, message: "Connection loop initiated" });
@@ -125,7 +129,7 @@ app.prepare().then(async () => {
   });
 
   // Temporary disconnect
-  server.post("/api/whatsapp/disconnect", async (req, res) => {
+  server.post("/api/whatsapp/disconnect", parseBody, async (req, res) => {
     try {
       await waManager.disconnect("default");
       return res.json({ success: true, message: "Disconnected successfully" });
@@ -137,7 +141,7 @@ app.prepare().then(async () => {
   });
 
   // Permanent logout (removes db keys)
-  server.post("/api/whatsapp/logout", async (req, res) => {
+  server.post("/api/whatsapp/logout", parseBody, async (req, res) => {
     try {
       await waManager.logout("default");
       return res.json({
@@ -152,7 +156,7 @@ app.prepare().then(async () => {
   });
 
   // Send Message (Protected by bearer token authentication)
-  server.post("/api/whatsapp/send", authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  server.post("/api/whatsapp/send", parseBody, authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { phone, text, imageUrl, caption } = req.body;
 
@@ -197,7 +201,7 @@ app.prepare().then(async () => {
     }
   });
 
-  server.post("/api/sendText", async (req, res) => {
+  server.post("/api/sendText", parseBody, async (req, res) => {
     try {
       const { to, content } = req.body;
       if (!to || !content) {
@@ -214,7 +218,7 @@ app.prepare().then(async () => {
   });
 
   // Image message send compatibility
-  server.post("/api/sendImage", async (req, res) => {
+  server.post("/api/sendImage", parseBody, async (req, res) => {
     try {
       const { to, url, caption } = req.body;
       if (!to || !url) {
@@ -231,7 +235,7 @@ app.prepare().then(async () => {
   });
 
   // Support mobile app background queue outbox processor
-  server.post("/send", async (req, res) => {
+  server.post("/send", parseBody, async (req, res) => {
     try {
       const { phone, message } = req.body;
       if (!phone || !message) {

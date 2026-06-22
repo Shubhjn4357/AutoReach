@@ -69,7 +69,7 @@ export async function useDrizzleAuthState(sessionId: string): Promise<{ state: A
           return data as { [id: string]: SignalDataTypeMap[T] };
         },
         set: async (data: { [category: string]: { [id: string]: unknown } }) => {
-          const promises: Promise<unknown>[] = [];
+          const batchOperations: any[] = [];
           for (const category of Object.keys(data)) {
             for (const keyId of Object.keys(data[category])) {
               const value = data[category][keyId];
@@ -77,39 +77,46 @@ export async function useDrizzleAuthState(sessionId: string): Promise<{ state: A
 
               if (value) {
                 const serialized = JSON.stringify(value, BufferJSON.replacer);
-                const promise = db
-                  .insert(whatsappAuth)
-                  .values({
-                    id,
-                    sessionId,
-                    category,
-                    keyId,
-                    value: serialized,
-                    updatedAt: Date.now(),
-                  })
-                  .onConflictDoUpdate({
-                    target: whatsappAuth.id,
-                    set: {
+                batchOperations.push(
+                  db
+                    .insert(whatsappAuth)
+                    .values({
+                      id,
+                      sessionId,
+                      category,
+                      keyId,
                       value: serialized,
                       updatedAt: Date.now(),
-                    },
-                  });
-                promises.push(promise);
+                    })
+                    .onConflictDoUpdate({
+                      target: whatsappAuth.id,
+                      set: {
+                        value: serialized,
+                        updatedAt: Date.now(),
+                      },
+                    })
+                );
               } else {
-                const promise = db
-                  .delete(whatsappAuth)
-                  .where(
-                    and(
-                      eq(whatsappAuth.sessionId, sessionId),
-                      eq(whatsappAuth.category, category),
-                      eq(whatsappAuth.keyId, keyId)
+                batchOperations.push(
+                  db
+                    .delete(whatsappAuth)
+                    .where(
+                      and(
+                        eq(whatsappAuth.sessionId, sessionId),
+                        eq(whatsappAuth.category, category),
+                        eq(whatsappAuth.keyId, keyId)
+                      )
                     )
-                  );
-                promises.push(promise);
+                );
               }
             }
           }
-          await Promise.all(promises);
+
+          if (batchOperations.length > 0) {
+            // Execute all operations in a single Turso HTTP request batch,
+            // preventing the 'Database connections limit exceeded' error.
+            await db.batch(batchOperations as [any, ...any[]]);
+          }
         },
       },
     },
