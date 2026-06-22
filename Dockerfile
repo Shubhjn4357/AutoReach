@@ -12,8 +12,8 @@ COPY mobile/package.json ./mobile/
 COPY shared ./shared
 COPY web ./web
 
-# Install dependencies (ignoring workspace root check warning)
-RUN pnpm install --frozen-lockfile
+# Install dependencies
+RUN pnpm install --no-frozen-lockfile
 
 # Build the Next.js app
 RUN pnpm run web:build
