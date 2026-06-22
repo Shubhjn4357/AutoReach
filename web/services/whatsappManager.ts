@@ -10,6 +10,7 @@ import makeWASocket, {
 import { db } from "../../shared/dbClient";
 import { whatsappAuth, whatsappSessions } from "../../shared/db";
 import { eq, and, inArray } from "drizzle-orm";
+import { BatchItem } from "drizzle-orm/batch";
 import * as qrcode from "qrcode";
 import { Boom } from "@hapi/boom";
 
@@ -69,7 +70,7 @@ export async function useDrizzleAuthState(sessionId: string): Promise<{ state: A
           return data as { [id: string]: SignalDataTypeMap[T] };
         },
         set: async (data: { [category: string]: { [id: string]: unknown } }) => {
-          const batchOperations: any[] = [];
+          const batchOperations: BatchItem<"sqlite">[] = [];
           for (const category of Object.keys(data)) {
             for (const keyId of Object.keys(data[category])) {
               const value = data[category][keyId];
@@ -115,7 +116,7 @@ export async function useDrizzleAuthState(sessionId: string): Promise<{ state: A
           if (batchOperations.length > 0) {
             // Execute all operations in a single Turso HTTP request batch,
             // preventing the 'Database connections limit exceeded' error.
-            await db.batch(batchOperations as [any, ...any[]]);
+            await db.batch(batchOperations as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
           }
         },
       },
