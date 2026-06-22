@@ -8,6 +8,7 @@ RUN npm install -g pnpm
 
 # Copy package files
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json ./
+COPY mobile/package.json ./mobile/
 COPY shared ./shared
 COPY web ./web
 
