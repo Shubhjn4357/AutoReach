@@ -117,7 +117,7 @@ app.prepare().then(async () => {
   });
 
   // Start the connection loop
-  server.post("/api/whatsapp/connect", parseBody, async (req, res) => {
+  server.post("/api/whatsapp/connect", parseBody, async (req: Request, res: Response) => {
     try {
       await waManager.connect("default");
       return res.json({ success: true, message: "Connection loop initiated" });
@@ -129,7 +129,7 @@ app.prepare().then(async () => {
   });
 
   // Temporary disconnect
-  server.post("/api/whatsapp/disconnect", parseBody, async (req, res) => {
+  server.post("/api/whatsapp/disconnect", parseBody, async (req: Request, res: Response) => {
     try {
       await waManager.disconnect("default");
       return res.json({ success: true, message: "Disconnected successfully" });
@@ -141,7 +141,7 @@ app.prepare().then(async () => {
   });
 
   // Permanent logout (removes db keys)
-  server.post("/api/whatsapp/logout", parseBody, async (req, res) => {
+  server.post("/api/whatsapp/logout", parseBody, async (req: Request, res: Response) => {
     try {
       await waManager.logout("default");
       return res.json({
@@ -201,7 +201,7 @@ app.prepare().then(async () => {
     }
   });
 
-  server.post("/api/sendText", parseBody, async (req, res) => {
+  server.post("/api/sendText", parseBody, async (req: Request, res: Response) => {
     try {
       const { to, content } = req.body;
       if (!to || !content) {
@@ -218,7 +218,7 @@ app.prepare().then(async () => {
   });
 
   // Image message send compatibility
-  server.post("/api/sendImage", parseBody, async (req, res) => {
+  server.post("/api/sendImage", parseBody, async (req: Request, res: Response) => {
     try {
       const { to, url, caption } = req.body;
       if (!to || !url) {
@@ -235,7 +235,7 @@ app.prepare().then(async () => {
   });
 
   // Support mobile app background queue outbox processor
-  server.post("/send", parseBody, async (req, res) => {
+  server.post("/send", parseBody, async (req: Request, res: Response) => {
     try {
       const { phone, message } = req.body;
       if (!phone || !message) {
