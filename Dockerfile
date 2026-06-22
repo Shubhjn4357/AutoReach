@@ -8,6 +8,7 @@ RUN npm install -g pnpm@9.15.0
 
 # Copy package files
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.json ./
+COPY patches ./patches
 COPY mobile/package.json ./mobile/
 COPY shared ./shared
 COPY web ./web
