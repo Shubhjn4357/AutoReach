@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@9.15.0",
-  "type": "module",
   "scripts": {
-    "web:dev": "tsx web/server.ts",
+    "web:dev": "tsx web/server.mts",
     "web:build": "next build web",
-    "web:start": "NODE_ENV=production tsx web/server.ts",
+    "web:start": "NODE_ENV=production tsx web/server.mts",
     "mobile:start": "expo start mobile",
     "mobile:ios": "expo start mobile --ios",
     "mobile:android": "expo start mobile --android",
@@ -63,7 +62,11 @@
       "esbuild",
       "msgpackr-extract",
       "protobufjs",
-      "sharp"
-    ]
+      "sharp",
+      "whatsapp-rust-bridge"
+    ],
+    "patchedDependencies": {
+      "whatsapp-rust-bridge@0.5.4": "patches/whatsapp-rust-bridge@0.5.4.patch"
+    }
   }
 }
