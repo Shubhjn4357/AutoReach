@@ -1,4 +1,4 @@
-const OPENWA_API_URL = process.env.OPENWA_API_URL || "http://localhost:3002";
+const OPENWA_API_URL = process.env.OPENWA_API_URL || "http://localhost:3000";
 
 export interface WhatsAppMessageResult {
   success: boolean;

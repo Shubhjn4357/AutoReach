@@ -1,5 +1,5 @@
-import React from "react";
-import { Sun, Moon } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Sun, Moon, QrCode, LogOut, RefreshCw, Link2, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface SettingsViewProps {
   tempProfileName: string;
@@ -7,6 +7,7 @@ interface SettingsViewProps {
   handleUpdateProfile: () => void;
   theme: "dark" | "light";
   toggleThemeMode: () => void;
+  authToken: string | null;
 }
 
 export default function SettingsView({
@@ -15,7 +16,157 @@ export default function SettingsView({
   handleUpdateProfile,
   theme,
   toggleThemeMode,
+  authToken,
 }: SettingsViewProps) {
+  const [waStatus, setWaStatus] = useState<string>("DISCONNECTED");
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [pushName, setPushName] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [pollingActive, setPollingActive] = useState<boolean>(true);
+
+  // Poll status every 3 seconds
+  useEffect(() => {
+    if (!pollingActive) return;
+
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch("/api/whatsapp/status");
+        const json = await res.json();
+        if (json.success && json.data) {
+          setWaStatus(json.data.status);
+          setPhoneNumber(json.data.phoneNumber);
+          setPushName(json.data.pushName);
+
+          // If QR is ready, fetch the QR code
+          if (json.data.status === "QR_READY") {
+            const qrRes = await fetch("/api/whatsapp/qr");
+            const qrJson = await qrRes.json();
+            if (qrJson.success && qrJson.data) {
+              setQrCode(qrJson.data.qrCode);
+            }
+          } else {
+            setQrCode(null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to poll WhatsApp status:", err);
+      }
+    };
+
+    fetchStatus(); // initial fetch
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, [pollingActive]);
+
+  const handleConnect = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/connect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      const json = await res.json();
+      if (!json.success) {
+        alert(json.error?.message || "Failed to trigger connect loop");
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/disconnect", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      const json = await res.json();
+      if (json.success) {
+        setWaStatus("DISCONNECTED");
+        setQrCode(null);
+      } else {
+        alert(json.error?.message || "Failed to disconnect");
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!confirm("Are you sure you want to unlink and delete WhatsApp credentials?")) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      const json = await res.json();
+      if (json.success) {
+        setWaStatus("DISCONNECTED");
+        setQrCode(null);
+        setPhoneNumber(null);
+        setPushName(null);
+      } else {
+        alert(json.error?.message || "Failed to logout");
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Render WhatsApp status pill styling
+  const renderStatusBadge = () => {
+    switch (waStatus) {
+      case "READY":
+        return (
+          <span className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+            <CheckCircle2 size={10} /> Linked & Online
+          </span>
+        );
+      case "INITIALIZING":
+        return (
+          <span className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse">
+            <RefreshCw size={10} className="animate-spin" /> Initializing
+          </span>
+        );
+      case "QR_READY":
+        return (
+          <span className="flex items-center gap-1 bg-sky-500/10 border border-sky-500/30 text-sky-400 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+            <QrCode size={10} /> Scan QR Code
+          </span>
+        );
+      case "FAILED":
+        return (
+          <span className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+            <AlertTriangle size={10} /> Setup Failed
+          </span>
+        );
+      default:
+        return (
+          <span className="flex items-center gap-1 bg-zinc-500/10 border border-zinc-500/30 text-zinc-400 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+            <Link2 size={10} /> Disconnected
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="max-w-xl mx-auto flex flex-col gap-6">
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-5 rounded-md">
@@ -25,6 +176,75 @@ export default function SettingsView({
         <p className="text-xs text-[var(--color-text-secondary)] mt-1">
           Configure your user dashboard settings and database routing values.
         </p>
+      </div>
+
+      {/* WhatsApp Automation Gateway */}
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-5 rounded-md flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-xs font-bold text-[var(--color-text-primary)] uppercase tracking-wider">
+            WhatsApp automation gateway
+          </h3>
+          {renderStatusBadge()}
+        </div>
+
+        <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
+          The persistent WhatsApp session runs in a background WebSocket container. To link a new WhatsApp device, click <strong>Link Device</strong> and scan the generated QR code.
+        </p>
+
+        {waStatus === "QR_READY" && qrCode && (
+          <div className="flex flex-col items-center justify-center p-6 bg-white rounded-lg border border-[var(--color-border)] my-2 max-w-[280px] mx-auto">
+            <img src={qrCode} alt="WhatsApp Web QR Code" className="w-[180px] h-[180px] object-contain" />
+            <span className="text-[10px] text-zinc-500 font-medium tracking-wide mt-3 text-center">
+              Scan this code inside WhatsApp Web Settings (Linked Devices) to pair.
+            </span>
+          </div>
+        )}
+
+        {waStatus === "READY" && phoneNumber && (
+          <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-md text-xs flex flex-col gap-1">
+            <div className="flex justify-between">
+              <span className="text-[var(--color-text-secondary)] font-medium">Linked Phone:</span>
+              <span className="text-[var(--color-text-primary)] font-bold">+{phoneNumber}</span>
+            </div>
+            {pushName && (
+              <div className="flex justify-between mt-1">
+                <span className="text-[var(--color-text-secondary)] font-medium">Profile Name:</span>
+                <span className="text-[var(--color-text-primary)] font-bold">{pushName}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          {waStatus === "DISCONNECTED" || waStatus === "FAILED" ? (
+            <button
+              onClick={handleConnect}
+              disabled={actionLoading}
+              className="flex-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/95 disabled:bg-[var(--color-primary)]/40 text-white font-bold text-[11px] py-2.5 rounded-md cursor-pointer shadow-sm transition-all"
+            >
+              {actionLoading ? "Connecting..." : "Link Device"}
+            </button>
+          ) : (
+            <>
+              {waStatus === "QR_READY" && (
+                <button
+                  onClick={handleDisconnect}
+                  disabled={actionLoading}
+                  className="flex-1 bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] hover:bg-white/5 font-bold text-[11px] py-2.5 rounded-md cursor-pointer transition-all"
+                >
+                  Cancel Linking
+                </button>
+              )}
+              <button
+                onClick={handleLogout}
+                disabled={actionLoading}
+                className="flex-1 bg-red-600 hover:bg-red-500 disabled:bg-red-800 text-white font-bold text-[11px] py-2.5 rounded-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
+              >
+                <LogOut size={12} /> Unlink Device
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Profile Card */}
@@ -99,7 +319,7 @@ export default function SettingsView({
           <div className="flex justify-between pb-1">
             <span>Task Scheduler Queue</span>
             <span className="text-[var(--color-text-primary)] font-semibold">
-              In-Memory Router Fallback
+              Stateful Baileys Socket Engine
             </span>
           </div>
         </div>

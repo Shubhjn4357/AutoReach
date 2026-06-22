@@ -64,3 +64,21 @@ export const syncQueue = sqliteTable("sync_queue", {
   createdAt: integer("created_at").notNull(),
   attempts: integer("attempts").default(0).notNull(),
 });
+
+export const whatsappAuth = sqliteTable("whatsapp_auth", {
+  id: text("id").primaryKey(), // session_id:category:key_id
+  sessionId: text("session_id").notNull(),
+  category: text("category").notNull(),
+  keyId: text("key_id").notNull(),
+  value: text("value").notNull(), // JSON string
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const whatsappSessions = sqliteTable("whatsapp_sessions", {
+  id: text("id").primaryKey(), // session_id
+  status: text("status").default("DISCONNECTED").notNull(),
+  qrCode: text("qr_code"), // data URL for QR png
+  phoneNumber: text("phone_number"),
+  pushName: text("push_name"),
+  updatedAt: integer("updated_at").notNull(),
+});

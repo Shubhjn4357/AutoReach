@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
   FlatList,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../services/theme";
 import {
@@ -287,7 +287,14 @@ function LeadsScreenContent() {
     });
     setProfileModalVisible(false);
   };
-
+  const stages: (LeadStatus | "ALL")[] = [
+    "ALL",
+    "NEW",
+    "CONTACTED",
+    "QUALIFIED",
+    "WON",
+    "LOST",
+  ];
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
       lead.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
@@ -303,93 +310,10 @@ function LeadsScreenContent() {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={[styles.container, { backgroundColor: colors.bg }]}>
-        {/* Clay Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.bg }]}>
-          <Pressable
-            onPress={() => {
-              setTempProfileName(profileName);
-              setProfileModalVisible(true);
-            }}
-            style={styles.profileBtn}
-          >
-            <View style={[
-              styles.avatar,
-              {
-                backgroundColor: colors.primary,
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.4,
-                shadowRadius: 8,
-                elevation: 6,
-              }
-            ]}>
-              <Text style={styles.avatarText}>
-                {profileName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View>
-              <Text
-                style={{ fontSize: 15, fontWeight: "800", color: colors.text, letterSpacing: -0.3 }}
-              >
-                {profileName}
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "500" }}>
-                {APP_CONSTANTS.contacts.subtitle}
-              </Text>
-            </View>
-          </Pressable>
-
-          <View style={{ flex: 1 }} />
-
-          <View style={{ flexDirection: "row", gap: 6 }}>
-            <IconButton
-              icon="people-outline"
-              onPress={handleImportDeviceContacts}
-              bgColor={colors.primarySoft}
-              color={colors.primary}
-              accessibilityLabel="Sync Device Contacts"
-            />
-            <IconButton
-              icon={isBulkMode ? "checkbox" : "checkbox-outline"}
-              onPress={() => {
-                setIsBulkMode(!isBulkMode);
-                setSelectedLeadIds([]);
-              }}
-              bgColor={isBulkMode ? colors.primarySoft : colors.accentSoft}
-              color={isBulkMode ? colors.primary : colors.accent}
-              accessibilityLabel="Toggle Bulk Mode"
-            />
-            <IconButton
-              icon="sync"
-              onPress={handleSync}
-              disabled={syncing}
-              bgColor={queueSize > 0 ? colors.warningSoft : colors.primarySoft}
-              color={queueSize > 0 ? colors.warning : colors.primary}
-            />
-            <IconButton
-              icon={theme === "dark" ? "sunny-outline" : "moon-outline"}
-              onPress={toggleTheme}
-              bgColor={colors.accentSoft}
-              color={colors.accent}
-            />
-          </View>
-        </View>
-
-        {/* Clay Search Bar */}
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder={APP_CONSTANTS.contacts.searchPlaceholder}
-        />
-
-        {/* Filter Stage Selector */}
-        <FilterPillRow
-          options={["ALL", "NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const}
-          selected={activeStageFilter}
-          onSelect={setActiveStageFilter}
-        />
-
+      <SafeAreaView
+        edges={["top"]}
+        style={[styles.container, { backgroundColor: colors.bg }]}
+      >
         {/* Lead List Cards (Virtualized FlatList with Suspense) */}
         <FlatList
           data={filteredLeads}
@@ -407,6 +331,97 @@ function LeadsScreenContent() {
               colors={[colors.primary]}
               tintColor={colors.primary}
             />
+          }
+          ListHeaderComponent={
+            <View style={{ backgroundColor: colors.bg }}>
+              {/* Clay Header */}
+              <View style={[styles.header, { paddingHorizontal: 0, paddingBottom: 16, backgroundColor: colors.bg }]}>
+                <Pressable
+                  onPress={() => {
+                    setTempProfileName(profileName);
+                    setProfileModalVisible(true);
+                  }}
+                  style={styles.profileBtn}
+                >
+                  <View style={[
+                    styles.avatar,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.4,
+                      shadowRadius: 8,
+                      elevation: 6,
+                    }
+                  ]}>
+                    <Text style={styles.avatarText}>
+                      {profileName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text
+                      style={{ fontSize: 15, fontWeight: "800", color: colors.text, letterSpacing: -0.3 }}
+                    >
+                      {profileName}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "500" }}>
+                      {APP_CONSTANTS.contacts.subtitle}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <View style={{ flex: 1 }} />
+
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  <IconButton
+                    icon="people-outline"
+                    onPress={handleImportDeviceContacts}
+                    bgColor={colors.primarySoft}
+                    color={colors.primary}
+                    accessibilityLabel="Sync Device Contacts"
+                  />
+                  <IconButton
+                    icon={isBulkMode ? "checkbox" : "checkbox-outline"}
+                    onPress={() => {
+                      setIsBulkMode(!isBulkMode);
+                      setSelectedLeadIds([]);
+                    }}
+                    bgColor={isBulkMode ? colors.primarySoft : colors.accentSoft}
+                    color={isBulkMode ? colors.primary : colors.accent}
+                    accessibilityLabel="Toggle Bulk Mode"
+                  />
+                  <IconButton
+                    icon="sync"
+                    onPress={handleSync}
+                    disabled={syncing}
+                    bgColor={queueSize > 0 ? colors.warningSoft : colors.primarySoft}
+                    color={queueSize > 0 ? colors.warning : colors.primary}
+                  />
+                  <IconButton
+                    icon={theme === "dark" ? "sunny-outline" : "moon-outline"}
+                    onPress={toggleTheme}
+                    bgColor={colors.accentSoft}
+                    color={colors.accent}
+                  />
+                </View>
+              </View>
+
+              {/* Clay Search Bar */}
+              <SearchBar
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder={APP_CONSTANTS.contacts.searchPlaceholder}
+                style={{ paddingHorizontal: 0, marginBottom: 16 }}
+              />
+
+              {/* Filter Stage Selector */}
+              <FilterPillRow
+                options={stages}
+                selected={activeStageFilter}
+                onSelect={setActiveStageFilter}
+                style={{ paddingHorizontal: 0, paddingVertical: 4, marginBottom: 16 }}
+              />
+            </View>
           }
           renderItem={({ item: lead }) => {
             const isSelected = selectedLeadIds.includes(lead.id);
@@ -428,6 +443,7 @@ function LeadsScreenContent() {
                     router.push(`/contact/${lead.id}`);
                   }
                 }}
+                style={{ marginBottom: 12 }}
               />
             );
           }}
@@ -1258,9 +1274,9 @@ function LeadsScreenContent() {
             setAlertConfig((prev) => ({ ...prev, visible: false }))
           }
         />
+        </SafeAreaView>
       </View>
-    </View>
-  );
+    );
 }
 
 const styles = StyleSheet.create({
@@ -1315,7 +1331,6 @@ const styles = StyleSheet.create({
   },
   leadsListContainer: {
     padding: 16,
-    gap: 12,
     paddingBottom: 100,
   },
   leadCard: {

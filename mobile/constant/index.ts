@@ -1,5 +1,6 @@
 export const APP_CONSTANTS = {
   appName: "AutoReach",
+  appIcon:"/assets/icon.png",
   appVersion: "AutoReach Client Build v1.0.0 (Production-Level Engine)",
   
   // Tab Headers & Subtitles

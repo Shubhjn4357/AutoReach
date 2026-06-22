@@ -719,6 +719,7 @@ export default function Dashboard() {
               handleUpdateProfile={handleUpdateProfile}
               theme={theme}
               toggleThemeMode={toggleThemeMode}
+              authToken={token}
             />
           )}
         </main>

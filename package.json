@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "web:dev": "next dev web -p 3000",
+    "web:dev": "tsx web/server.ts",
     "web:build": "next build web",
-    "web:start": "next start web",
+    "web:start": "NODE_ENV=production tsx web/server.ts",
     "mobile:start": "expo start mobile",
     "mobile:ios": "expo start mobile --ios",
     "mobile:android": "expo start mobile --android",
@@ -17,13 +17,17 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
+    "@whiskeysockets/baileys": "7.0.0-rc13",
     "bullmq": "^5.8.0",
     "clsx": "^2.1.0",
+    "cors": "^2.8.6",
     "drizzle-orm": "^0.45.2",
     "expo-dev-client": "~56.0.20",
+    "express": "^5.2.1",
     "ioredis": "^5.4.1",
     "lucide-react": "^0.300.0",
     "next": "^15.0.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tailwind-merge": "^2.2.0"
@@ -32,7 +36,10 @@
     "@babel/core": "^7.20.0",
     "@react-native/metro-config": "0.85.3",
     "@tailwindcss/postcss": "^4.3.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^20.11.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "~19.2.17",
     "@types/react-dom": "^19",
     "@typescript-eslint/eslint-plugin": "^8.61.1",
@@ -42,6 +49,7 @@
     "postcss": "^8.4.0",
     "prettier": "^3.0.0",
     "tailwindcss": "^4.3.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   },
   "resolutions": {
