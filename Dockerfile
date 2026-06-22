@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:22-slim
 
 # Set working directory
 WORKDIR /app
@@ -7,7 +7,7 @@ WORKDIR /app
 RUN npm install -g pnpm
 
 # Copy package files
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.json ./
 COPY mobile/package.json ./mobile/
 COPY shared ./shared
 COPY web ./web

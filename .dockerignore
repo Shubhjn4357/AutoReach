@@ -22,5 +22,3 @@ local.db
 .gemini
 .agents
 *.md
-Dockerfile
-railway.json
