@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import {
   StyleSheet,
   View,
@@ -8,20 +8,20 @@ import {
   Pressable,
   Platform,
   KeyboardAvoidingView,
-  Modal,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
-import { getQueuedOperations, getLocalLeads } from "../../services/db";
-import { executeSyncCycle } from "../../services/sync";
+import { getLocalLeads } from "../../services/db";
+import { useSync } from "../../hook/useSync";
 import { removeSecureItem, saveSecureItem, getSecureItem } from "../../services/store";
-import { triggerLocalNotification } from "../../services/notifications";
+
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
-import { Host, Switch } from "@expo/ui";
+
 import * as LocalAuthentication from "expo-local-authentication";
 import { APP_CONSTANTS } from "../../constant";
 import {
@@ -29,17 +29,27 @@ import {
   hapticHeavy,
   hapticSuccess,
   hapticWarning,
-  hapticError,
-  hapticLight,
+  hapticError
 } from "../../services/haptics";
 
 export default function SettingsScreen() {
+  const { colors } = useTheme();
+  return (
+    <Suspense fallback={
+      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    }>
+      <SettingsScreenContent />
+    </Suspense>
+  );
+}
+
+function SettingsScreenContent() {
   const store = useAppStore();
   const { colors, glassStyle, glassInputStyle, clayStyle, clayInputStyle } = useTheme();
 
-  const [syncQueueSize, setSyncQueueSize] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
-  const [syncing, setSyncing] = useState(false);
 
   // Biometrics Lock Preference
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
@@ -83,10 +93,19 @@ export default function SettingsScreen() {
     });
   };
 
+  const {
+    syncing,
+    handleSync,
+    queueSize,
+  } = useSync({
+    showCustomAlert,
+    refetchLeads: async () => {
+      await loadStats();
+    },
+  });
+
   const loadStats = async () => {
     try {
-      const queue = await getQueuedOperations();
-      setSyncQueueSize(queue.length);
       const leads = await getLocalLeads();
       setTotalLeads(leads.length);
     } catch (e) {
@@ -259,31 +278,7 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleManualSync = async () => {
-    hapticMedium();
-    setSyncing(true);
-    const result = await executeSyncCycle();
-    setSyncing(false);
-    if (result.success) {
-      hapticSuccess();
-      showCustomAlert(
-        "Sync Complete",
-        `Successfully synchronized ${result.syncedCount} offline operations.`,
-        "success",
-      );
-      await triggerLocalNotification(
-        "AutoReach Sync Completed",
-        `Successfully synchronized ${result.syncedCount} offline operations.`,
-      );
-    } else {
-      showCustomAlert(
-        "Sync Error",
-        "Could not connect to the API server. Please check settings.",
-        "error",
-      );
-    }
-    await loadStats();
-  };
+
 
   const handleWipeData = async () => {
     hapticHeavy();
@@ -316,7 +311,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Host style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <SafeAreaView
         edges={["top"]}
         style={[styles.container, { backgroundColor: colors.bg }]}
@@ -594,13 +589,13 @@ export default function SettingsScreen() {
                   { color: colors.warning, fontSize: 14 },
                 ]}
               >
-                {syncQueueSize}
+                {queueSize}
               </Text>
             </View>
 
             <View style={styles.actionButtonsRow}>
               <Pressable
-                onPress={handleManualSync}
+                onPress={handleSync}
                 disabled={syncing}
                 style={[
                   styles.syncBtn,
@@ -652,7 +647,7 @@ export default function SettingsScreen() {
           }
         />
       </SafeAreaView>
-    </Host>
+    </View>
   );
 }
 

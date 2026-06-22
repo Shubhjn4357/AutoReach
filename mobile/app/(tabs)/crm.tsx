@@ -1,15 +1,16 @@
-import React, { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import {
   StyleSheet,
   View,
   Text,
-  ScrollView,
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  InteractionManager,
+  FlatList,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useTheme } from "../../services/theme";
 import {
   getLocalLeads,
@@ -18,9 +19,16 @@ import {
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
-import { Host } from "@expo/ui";
+import { SearchBar } from "../../components/SearchBar";
+import { FilterPillRow } from "../../components/FilterPillRow";
+import { LeadCard } from "../../components/LeadCard";
+import { BulkActionBar } from "../../components/BulkActionBar";
+import { IconButton } from "../../components/IconButton";
+import { useDebounce } from "../../hook/useDebounce";
 import { APP_CONSTANTS } from "../../constant";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
+import { useSync } from "../../hook/useSync";
+import { useCampaign } from "../../hook/useCampaign";
 import {
   hapticLight,
   hapticMedium,
@@ -34,10 +42,10 @@ export default function CRMPipelinesScreen() {
   const [isTransitionFinished, setIsTransitionFinished] = useState(false);
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
+    const timeout = setTimeout(() => {
       setIsTransitionFinished(true);
-    });
-    return () => task.cancel();
+    }, 150);
+    return () => clearTimeout(timeout);
   }, []);
 
   if (!isTransitionFinished) {
@@ -62,15 +70,16 @@ export default function CRMPipelinesScreen() {
 function CRMPipelinesScreenContent() {
   const { colors, glassStyle } = useTheme();
   const queryClient = useQueryClient();
+  const router = useRouter();
 
-  const { data: leads = [] } = useSuspenseQuery<Lead[]>({
+  const { data: leads = [], refetch: refetchLeads } = useSuspenseQuery<Lead[]>({
     queryKey: ["leads"],
     queryFn: getLocalLeads,
   });
 
   const [filterStatus, setFilterStatus] = useState<LeadStatus | "ALL">("ALL");
-  const [refreshing, setRefreshing] = useState(false);
-
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
   // Custom Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -101,11 +110,26 @@ function CRMPipelinesScreenContent() {
     });
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ["leads"] });
-    setRefreshing(false);
-  };
+  const {
+    refreshing,
+    invalidateAll,
+    onRefresh,
+  } = useSync({
+    showCustomAlert,
+    refetchLeads,
+  });
+
+  const {
+    isBulkMode,
+    setIsBulkMode,
+    selectedLeadIds,
+    setSelectedLeadIds,
+  } = useCampaign({
+    showCustomAlert,
+    invalidateAll,
+  });
+
+  const handleOnRefresh = () => onRefresh(async () => {});
 
   const changeLeadStatus = async (lead: Lead, nextStatus: LeadStatus) => {
     hapticMedium();
@@ -115,7 +139,7 @@ function CRMPipelinesScreenContent() {
       updatedAt: Date.now(),
     };
     await updateLocalLead(updated);
-    await queryClient.invalidateQueries({ queryKey: ["leads"] });
+    await invalidateAll();
     hapticSuccess();
     showCustomAlert(
       "Updated!",
@@ -137,17 +161,68 @@ function CRMPipelinesScreenContent() {
           style: "destructive",
           onPress: async () => {
             await deleteLocalLead(id);
-            await queryClient.invalidateQueries({ queryKey: ["leads"] });
+            await invalidateAll();
           },
         },
       ],
     );
   };
 
-  const filteredLeads =
-    filterStatus === "ALL"
-      ? leads
-      : leads.filter((l) => l.status === filterStatus);
+  const handleBulkDelete = async () => {
+    hapticHeavy();
+    showCustomAlert(
+      "Confirm Delete",
+      `Are you sure you want to delete ${selectedLeadIds.length} selected leads?`,
+      "warning",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            for (const id of selectedLeadIds) {
+              await deleteLocalLead(id);
+            }
+            setSelectedLeadIds([]);
+            setIsBulkMode(false);
+            await invalidateAll();
+            hapticSuccess();
+            showCustomAlert("Success", "Selected leads deleted.", "success");
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBulkStatusChange = async (nextStatus: LeadStatus) => {
+    hapticMedium();
+    for (const id of selectedLeadIds) {
+      const lead = leads.find((l) => l.id === id);
+      if (lead) {
+        const updated: Lead = {
+          ...lead,
+          status: nextStatus,
+          updatedAt: Date.now(),
+        };
+        await updateLocalLead(updated);
+      }
+    }
+    setSelectedLeadIds([]);
+    setIsBulkMode(false);
+    await invalidateAll();
+    hapticSuccess();
+    showCustomAlert("Updated!", `Selected leads moved to ${nextStatus}.`, "success");
+  };
+
+  const filteredLeads = leads.filter((lead) => {
+    const matchesStage = filterStatus === "ALL" || lead.status === filterStatus;
+    const matchesSearch =
+      !debouncedSearch ||
+      lead.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+      (lead.phone && lead.phone.includes(debouncedSearch)) ||
+      (lead.email && lead.email.toLowerCase().includes(debouncedSearch.toLowerCase()));
+    return matchesStage && matchesSearch;
+  });
 
   const stages: (LeadStatus | "ALL")[] = [
     "ALL",
@@ -159,181 +234,166 @@ function CRMPipelinesScreenContent() {
   ];
 
   return (
-    <Host style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <SafeAreaView
         edges={["top"]}
         style={[styles.container, { backgroundColor: colors.bg }]}
       >
-        <ScrollView
+        <FlatList
+          data={filteredLeads}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.scrollContainer}
+          removeClippedSubviews={Platform.OS === "android"}
+          maxToRenderPerBatch={10}
+          initialNumToRender={10}
+          windowSize={5}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={onRefresh}
+              onRefresh={handleOnRefresh}
               colors={[colors.primary]}
               tintColor={colors.primary}
             />
           }
-        >
-          {/* Header */}
-          <View style={styles.headerContainer}>
-            <Text style={[styles.title, { color: colors.text }]}>{APP_CONSTANTS.crm.title}</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              {APP_CONSTANTS.crm.subtitle}
-            </Text>
-          </View>
-
-          {/* CRM Summary Metrics Row */}
-          <View style={styles.summaryRow}>
-            <View
-              style={[
-                styles.metricCard,
-                glassStyle,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Total Contacts
-              </Text>
-              <Text style={[styles.metricValue, { color: colors.primary }]}>
-                {leads.length}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.metricCard,
-                glassStyle,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Active Leads
-              </Text>
-              <Text style={[styles.metricValue, { color: colors.success }]}>
-                {leads.filter((l) => l.status !== "WON" && l.status !== "LOST").length}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.metricCard,
-                glassStyle,
-                { backgroundColor: colors.surface },
-              ]}
-            >
-              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                Deals Won
-              </Text>
-              <Text style={[styles.metricValue, { color: colors.accent }]}>
-                {leads.filter((l) => l.status === "WON").length}
-              </Text>
-            </View>
-          </View>
-
-          {/* Horizontal stages filtering row */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ maxHeight: 48, marginBottom: 20 }}
-            contentContainerStyle={styles.stagesRow}
-          >
-            {stages.map((stage) => {
-              const isSelected = filterStatus === stage;
-              return (
-                <Pressable
-                  key={stage}
-                  onPress={() => { hapticLight(); setFilterStatus(stage); }}
-                  style={[
-                    styles.stageBtn,
-                    isSelected
-                      ? { backgroundColor: colors.primary }
-                      : {
-                          backgroundColor: colors.surface,
-                          borderColor: colors.border,
-                          borderWidth: 1,
-                        },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: isSelected ? "#FFFFFF" : colors.textSecondary,
-                    }}
-                  >
-                    {stage}
+          ListHeaderComponent={
+            <>
+              {/* Header */}
+              <View style={[styles.headerContainer, { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.title, { color: colors.text }]}>{APP_CONSTANTS.crm.title}</Text>
+                  <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                    {APP_CONSTANTS.crm.subtitle}
                   </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                </View>
+                <IconButton
+                  icon={isBulkMode ? "checkbox" : "checkbox-outline"}
+                  onPress={() => {
+                    setIsBulkMode(!isBulkMode);
+                    setSelectedLeadIds([]);
+                  }}
+                  bgColor={isBulkMode ? colors.primarySoft : colors.accentSoft}
+                  color={isBulkMode ? colors.primary : colors.accent}
+                  accessibilityLabel="Toggle Bulk Mode"
+                />
+              </View>
 
-          {/* Columns cards list */}
-          <View style={styles.listContainer}>
-            {filteredLeads.length === 0 ? (
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                {APP_CONSTANTS.crm.emptyState}
-              </Text>
-            ) : (
-              filteredLeads.map((lead) => (
+              {/* CRM Summary Metrics Row */}
+              <View style={styles.summaryRow}>
                 <View
-                  key={lead.id}
                   style={[
+                    styles.metricCard,
                     glassStyle,
-                    styles.leadCard,
                     { backgroundColor: colors.surface },
                   ]}
                 >
-                  <View style={styles.leadCardTop}>
-                    <View style={styles.leadCardTopLeft}>
-                      <Text style={[styles.leadName, { color: colors.text }]}>
-                        {lead.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.leadEmail,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        {lead.email || "No email provided"}
-                      </Text>
-                    </View>
-                    <View style={styles.leadCardTopRight}>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor:
-                              lead.status === "WON"
-                                ? `${colors.success}1A`
-                                : lead.status === "LOST"
-                                  ? `${colors.danger}1A`
-                                  : `${colors.primary}1A`,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusBadgeText,
-                            {
-                              color:
-                                lead.status === "WON"
-                                  ? colors.success
-                                  : lead.status === "LOST"
-                                    ? colors.danger
-                                    : colors.primary,
-                            },
-                          ]}
-                        >
-                          {lead.status}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Total Contacts
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.primary }]}>
+                    {leads.length}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.metricCard,
+                    glassStyle,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Active Leads
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.success }]}>
+                    {leads.filter((l) => l.status !== "WON" && l.status !== "LOST").length}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.metricCard,
+                    glassStyle,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Deals Won
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.accent }]}>
+                    {leads.filter((l) => l.status === "WON").length}
+                  </Text>
+                </View>
+              </View>
 
-                  {/* Transition actions */}
+              {/* Clay Search Bar */}
+              <SearchBar
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search leads..."
+                style={{ paddingHorizontal: 0, marginBottom: 16 }}
+              />
+
+              {/* Horizontal stages filtering row */}
+              <FilterPillRow
+                options={stages}
+                selected={filterStatus}
+                onSelect={setFilterStatus}
+                style={{ paddingHorizontal: 0, paddingVertical: 4, marginBottom: 16 }}
+              />
+            </>
+          }
+          renderItem={({ item: lead }) => {
+            const isSelected = selectedLeadIds.includes(lead.id);
+            return (
+              <View
+                key={lead.id}
+                style={[
+                  glassStyle,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    borderWidth: isSelected ? 2 : 1.5,
+                    borderRadius: 22,
+                    overflow: "hidden",
+                    marginBottom: 12,
+                    shadowColor: isSelected ? colors.primary : colors.clayShadowDark,
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: isSelected ? 0.3 : 0.15,
+                    shadowRadius: 14,
+                    elevation: isSelected ? 10 : 6,
+                  },
+                ]}
+              >
+                <LeadCard
+                  lead={lead}
+                  isBulkMode={isBulkMode}
+                  isSelected={isSelected}
+                  onPress={() => {
+                    if (isBulkMode) {
+                      hapticLight();
+                      setSelectedLeadIds((prev) =>
+                        prev.includes(lead.id)
+                          ? prev.filter((id) => id !== lead.id)
+                          : [...prev, lead.id],
+                      );
+                    } else {
+                      hapticMedium();
+                      router.push(`/contact/${lead.id}`);
+                    }
+                  }}
+                  style={{
+                    borderWidth: 0,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    backgroundColor: "transparent",
+                    borderRadius: 0,
+                  }}
+                />
+
+                {/* Transition actions */}
+                {!isBulkMode && (
                   <View
                     style={[
                       styles.actionsContainer,
-                      { borderTopColor: `${colors.border}80` },
+                      { borderTopColor: `${colors.border}80`, marginHorizontal: 16, marginBottom: 14, paddingTop: 12 },
                     ]}
                   >
                     <View style={styles.leftActions}>
@@ -411,11 +471,47 @@ function CRMPipelinesScreenContent() {
                       </Text>
                     </Pressable>
                   </View>
-                </View>
-              ))
-            )}
-          </View>
-        </ScrollView>
+                )}
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              {APP_CONSTANTS.crm.emptyState}
+            </Text>
+          }
+        />
+        <BulkActionBar
+          selectedCount={isBulkMode ? selectedLeadIds.length : 0}
+          onSelectAllToggle={() => {
+            if (selectedLeadIds.length === filteredLeads.length) {
+              setSelectedLeadIds([]);
+            } else {
+              setSelectedLeadIds(filteredLeads.map((l) => l.id));
+            }
+          }}
+          isAllSelected={selectedLeadIds.length === filteredLeads.length}
+          actions={[
+            {
+              label: "Mark WON",
+              icon: "checkmark-circle-outline",
+              onPress: () => handleBulkStatusChange("WON"),
+              bgColor: colors.success,
+            },
+            {
+              label: "Mark LOST",
+              icon: "close-circle-outline",
+              onPress: () => handleBulkStatusChange("LOST"),
+              bgColor: colors.warning,
+            },
+            {
+              label: "Delete",
+              icon: "trash-outline",
+              onPress: handleBulkDelete,
+              bgColor: colors.danger,
+            },
+          ]}
+        />
         <CustomAlert
           visible={alertConfig.visible}
           title={alertConfig.title}
@@ -427,7 +523,7 @@ function CRMPipelinesScreenContent() {
           }
         />
       </SafeAreaView>
-    </Host>
+    </View>
   );
 }
 

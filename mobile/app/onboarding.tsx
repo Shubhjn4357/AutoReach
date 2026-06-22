@@ -4,24 +4,24 @@ import {
   View,
   Text,
   ScrollView,
-  Pressable,
   Dimensions,
   Animated,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTheme } from "../services/theme";
 import { saveSecureItem } from "../services/store";
 import { Ionicons } from "@expo/vector-icons";
-import { Host } from "@expo/ui";
 import {
   hapticLight,
   hapticMedium,
   hapticSuccess,
 } from "../services/haptics";
+
+import { APP_CONSTANTS } from "../constant";
+import { Button } from "../components/Button";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -33,32 +33,7 @@ interface Slide {
   accentColor: string;
 }
 
-const SLIDES: Slide[] = [
-  {
-    id: "slide_1",
-    title: "Lead Pipeline Hub",
-    description:
-      "Keep track of all your sales pipelines and contact info in one central hub.",
-    icon: "people-outline",
-    accentColor: "#6366F1",
-  },
-  {
-    id: "slide_2",
-    title: "AI Opportunity Auditor",
-    description:
-      "Scan opportunities, evaluate lead scoring, and generate proactive follow-up replies using on-device models.",
-    icon: "sparkles-outline",
-    accentColor: "#EC4899",
-  },
-  {
-    id: "slide_3",
-    title: "Offline Sync & Comms",
-    description:
-      "Work offline seamlessly. Sync leads and dispatch templates via built-in WhatsApp & SMS gateways when online.",
-    icon: "sync-outline",
-    accentColor: "#10B981",
-  },
-];
+const SLIDES = APP_CONSTANTS.onboardingSlides as Slide[];
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -114,7 +89,7 @@ export default function OnboardingScreen() {
   });
 
   return (
-    <Host style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <Animated.View 
         style={[
           styles.container, 
@@ -140,21 +115,13 @@ export default function OnboardingScreen() {
               </Text>
             </View>
             {activeIndex < SLIDES.length - 1 && (
-              <Pressable 
-                onPress={() => { hapticLight(); handleFinish(); }} 
-                style={[
-                  styles.skipBtn, 
-                  { 
-                    backgroundColor: colors.surface + "30", 
-                    borderColor: colors.border 
-                  }
-                ]} 
-                hitSlop={12}
-              >
-                <Text style={[styles.skipText, { color: colors.textSecondary }]}>
-                  Skip
-                </Text>
-              </Pressable>
+              <Button
+                label="Skip"
+                onPress={handleFinish}
+                variant="ghost"
+                size="sm"
+                style={{ paddingHorizontal: 12, height: 32 }}
+              />
             )}
           </View>
 
@@ -260,35 +227,21 @@ export default function OnboardingScreen() {
             </View>
 
             {/* Claymorphic Pill CTA Button */}
-            <Pressable
+            <Button
+              label={activeIndex === SLIDES.length - 1 ? "Get Started" : "Next"}
               onPress={handleNext}
-              style={[
-                clayCardStyle,
-                styles.actionButton,
-                {
-                  backgroundColor: SLIDES[activeIndex]?.accentColor || colors.primary,
-                  borderColor: (SLIDES[activeIndex]?.accentColor || colors.primary) + "40",
-                },
-              ]}
-            >
-              <Text style={styles.actionButtonText}>
-                {activeIndex === SLIDES.length - 1 ? "Get Started" : "Next"}
-              </Text>
-              <Ionicons
-                name={
-                  activeIndex === SLIDES.length - 1
-                    ? "checkmark"
-                    : "arrow-forward"
-                }
-                size={16}
-                color="#FFFFFF"
-                style={styles.actionIcon}
-              />
-            </Pressable>
+              icon={activeIndex === SLIDES.length - 1 ? "checkmark" : "arrow-forward"}
+              iconPosition="right"
+              variant="primary"
+              style={{
+                backgroundColor: SLIDES[activeIndex]?.accentColor || colors.primary,
+                borderColor: (SLIDES[activeIndex]?.accentColor || colors.primary) + "40",
+              }}
+            />
           </View>
         </SafeAreaView>
       </Animated.View>
-    </Host>
+    </View>
   );
 }
 

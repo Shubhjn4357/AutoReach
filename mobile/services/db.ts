@@ -46,14 +46,21 @@ let drizzleDb: ReturnType<typeof drizzle<typeof schema>> | null = null;
 export async function getDb() {
   if (!dbInstance) {
     dbInstance = await SQLite.openDatabaseAsync("autoreach.db");
+    await dbInstance.execAsync("PRAGMA journal_mode = WAL;");
   }
   return dbInstance;
 }
 
 export function getDrizzle() {
   if (!drizzleDb) {
-    const sqlite = SQLite.openDatabaseSync("autoreach.db");
-    drizzleDb = drizzle(sqlite, { schema });
+    if (dbInstance) {
+      drizzleDb = drizzle(dbInstance, { schema });
+    } else {
+      const sqlite = SQLite.openDatabaseSync("autoreach.db");
+      sqlite.execSync("PRAGMA journal_mode = WAL;");
+      dbInstance = sqlite;
+      drizzleDb = drizzle(sqlite, { schema });
+    }
   }
   return drizzleDb;
 }
@@ -61,9 +68,13 @@ export function getDrizzle() {
 export async function initDb(db?: SQLite.SQLiteDatabase) {
   if (db) {
     dbInstance = db;
+    drizzleDb = drizzle(db, { schema });
   } else {
     db = await getDb();
+    drizzleDb = drizzle(db, { schema });
   }
+
+  await db.execAsync("PRAGMA journal_mode = WAL;");
 
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS users (
@@ -539,4 +550,44 @@ export async function getWhatsAppQueueSize(): Promise<number> {
     .from(schema.whatsappOutbox)
     .where(eq(schema.whatsappOutbox.status, 'PENDING'));
   return res[0]?.count || 0;
+}
+
+export async function createLocalLeadsBatch(leadsList: Lead[]) {
+  if (leadsList.length === 0) return;
+  const db = getDrizzle();
+  await db.transaction(async (tx) => {
+    const leadsValues = leadsList.map((lead) => ({
+      id: lead.id,
+      userId: lead.userId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      status: lead.status,
+      value: lead.value,
+      notes: lead.notes,
+      createdAt: typeof lead.createdAt === "number" ? lead.createdAt : Date.now(),
+      updatedAt: typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now(),
+    }));
+
+    const chunkSize = 100;
+    for (let i = 0; i < leadsValues.length; i += chunkSize) {
+      const chunk = leadsValues.slice(i, i + chunkSize);
+      await tx.insert(schema.leads).values(chunk);
+    }
+
+    const syncValues = leadsList.map((lead) => ({
+      table: "leads" as const,
+      operation: "CREATE" as const,
+      recordId: lead.id,
+      payload: JSON.stringify(lead),
+      createdAt: Date.now(),
+      attempts: 0,
+    }));
+
+    for (let i = 0; i < syncValues.length; i += chunkSize) {
+      const chunk = syncValues.slice(i, i + chunkSize);
+      await tx.insert(schema.syncQueue).values(chunk);
+    }
+  });
+  console.log(`Batch created ${leadsList.length} leads in SQLite.`);
 }

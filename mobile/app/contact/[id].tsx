@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import {
   ActivityIndicator,
-  Modal,
+  
   StyleSheet,
   View,
   Text,
@@ -9,8 +9,7 @@ import {
   TextInput,
   Pressable,
   Platform,
-  KeyboardAvoidingView,
-  InteractionManager,
+  
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -26,8 +25,14 @@ import { Lead, LeadStatus } from "../../shared/types";
 import { recommendNextStep } from "../../shared/crm";
 import { Ionicons } from "@expo/vector-icons";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
-import { Host } from "@expo/ui";
-import { useSuspenseQuery, useQueryClient, useQuery } from "@tanstack/react-query";
+import { StatusBadge } from "../../components/StatusBadge";
+import { BottomDrawer } from "../../components/BottomDrawer";
+import { IconButton } from "../../components/IconButton";
+import { Button } from "../../components/Button";
+import { PillButton } from "../../components/PillButton";
+import { SectionLabel } from "../../components/SectionLabel";
+
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { ContactDetailSkeleton } from "../../components/Skeleton";
 
 interface AiAuditResult {
@@ -70,10 +75,10 @@ function ContactDetailScreenContent() {
   const [isTransitionFinished, setIsTransitionFinished] = useState(false);
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
+    const timeout = setTimeout(() => {
       setIsTransitionFinished(true);
-    });
-    return () => task.cancel();
+    }, 150);
+    return () => clearTimeout(timeout);
   }, []);
 
   const { data: lead, isLoading } = useQuery<Lead | null>({
@@ -103,10 +108,6 @@ function ContactDetailScreenContent() {
       });
     }
   }, [lead]);
-
-  if (!isTransitionFinished || isLoading) {
-    return <ContactDetailSkeleton />;
-  }
 
   // AI CRM Agent State
   const [aiLoading, setAiLoading] = useState(false);
@@ -283,40 +284,53 @@ function ContactDetailScreenContent() {
   };
 
   const throttledSendMessage = useThrottle(handleSendMessage, 2000);
+  if (!isTransitionFinished || isLoading) {
+    return (
+      <SafeAreaView
+        edges={["top", "bottom", "left", "right"]}
+        style={{ flex: 1 }}
+      >
+        <ContactDetailSkeleton />
+      </SafeAreaView>
+    );
+  }
 
   if (!lead) {
     return (
-      <Host style={{ flex: 1 }}>
+      <SafeAreaView
+        edges={["top", "bottom", "left", "right"]}
+        style={{ flex: 1, backgroundColor: colors.bg }}
+      >
         <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
           <Text style={{ color: colors.text, fontWeight: "bold" }}>Contact not found</Text>
           <Pressable onPress={() => router.back()} style={{ marginTop: 12, padding: 12, backgroundColor: colors.primary, borderRadius: 10 }}>
             <Text style={{ color: "#FFFFFF", fontWeight: "bold" }}>Go Back</Text>
           </Pressable>
         </View>
-      </Host>
+      </SafeAreaView>
     );
   }
 
   return (
-    <Host style={{ flex: 1 }}>
-      <SafeAreaView
-        edges={["bottom"]}
-        style={[styles.container, { backgroundColor: colors.bg }]}
-      >
+    <SafeAreaView
+      edges={["top", "bottom", "left", "right"]}
+      style={[styles.container, { backgroundColor: colors.bg }]}
+    >
         {/* Custom Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={20} color={colors.primary} />
-            <Text
-              style={{ color: colors.primary, fontWeight: "600", fontSize: 14 }}
-            >
-              Back
-            </Text>
-          </Pressable>
+          <IconButton
+            icon="arrow-back"
+            onPress={() => router.back()}
+            color={colors.primary}
+            bgColor={colors.primarySoft}
+          />
           <View style={{ flex: 1 }} />
-          <Pressable onPress={handleDeleteLead} style={styles.deleteHeaderBtn}>
-            <Ionicons name="trash-outline" size={20} color={colors.danger} />
-          </Pressable>
+          <IconButton
+            icon="trash-outline"
+            onPress={handleDeleteLead}
+            color={colors.danger}
+            bgColor={colors.dangerSoft}
+          />
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -365,34 +379,7 @@ function ContactDetailScreenContent() {
                 </View>
               </View>
               <View style={{ flex: 1 }} />
-              <View
-                style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor:
-                      lead.status === "WON"
-                        ? `${colors.success}1A`
-                        : lead.status === "LOST"
-                          ? `${colors.danger}1A`
-                          : `${colors.primary}1A`,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "bold",
-                    color:
-                      lead.status === "WON"
-                        ? colors.success
-                        : lead.status === "LOST"
-                          ? colors.danger
-                          : colors.primary,
-                  }}
-                >
-                  {lead.status}
-                </Text>
-              </View>
+              <StatusBadge status={lead.status} />
             </View>
 
             <View
@@ -500,24 +487,13 @@ function ContactDetailScreenContent() {
                 AI CRM Auditor
               </Text>
               <View style={{ flex: 1 }} />
-              <Pressable
+              <Button
+                label={aiLoading ? "Auditing..." : "Run Audit"}
                 onPress={handleRunAiAudit}
                 disabled={aiLoading}
-                style={{
-                  backgroundColor: colors.primary,
-                  height: 32,
-                  borderRadius: 8,
-                  paddingHorizontal: 12,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 11 }}
-                >
-                  Run Audit
-                </Text>
-              </Pressable>
+                variant="primary"
+                size="sm"
+              />
             </View>
 
             {aiLoading && (
@@ -630,7 +606,8 @@ function ContactDetailScreenContent() {
                     <View
                       style={{ flexDirection: "row", gap: 12, marginTop: 12 }}
                     >
-                      <Pressable
+                      <Button
+                        label="Send WhatsApp"
                         onPress={() =>
                           throttledSendMessage(
                             "whatsapp",
@@ -638,32 +615,13 @@ function ContactDetailScreenContent() {
                           )
                         }
                         disabled={actionLoading}
-                        style={[
-                          styles.dispatchBtn,
-                          {
-                            backgroundColor: `${colors.success}33`,
-                            borderColor: `${colors.success}66`,
-                            borderWidth: 1,
-                          },
-                        ]}
-                      >
-                        <Ionicons
-                          name="logo-whatsapp"
-                          size={14}
-                          color={colors.success}
-                        />
-                        <Text
-                          style={{
-                            color: colors.success,
-                            fontSize: 11,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Send WhatsApp
-                        </Text>
-                      </Pressable>
+                        variant="success"
+                        size="sm"
+                        style={{ flex: 1 }}
+                      />
 
-                      <Pressable
+                      <Button
+                        label="Send SMS"
                         onPress={() =>
                           throttledSendMessage(
                             "sms",
@@ -671,30 +629,10 @@ function ContactDetailScreenContent() {
                           )
                         }
                         disabled={actionLoading}
-                        style={[
-                          styles.dispatchBtn,
-                          {
-                            backgroundColor: `${colors.primary}33`,
-                            borderColor: `${colors.primary}66`,
-                            borderWidth: 1,
-                          },
-                        ]}
-                      >
-                        <Ionicons
-                          name="chatbubble-ellipses-outline"
-                          size={14}
-                          color={colors.primary}
-                        />
-                        <Text
-                          style={{
-                            color: colors.primary,
-                            fontSize: 11,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Send SMS
-                        </Text>
-                      </Pressable>
+                        variant="primary"
+                        size="sm"
+                        style={{ flex: 1 }}
+                      />
                     </View>
                   </View>
                 )}
@@ -717,166 +655,88 @@ function ContactDetailScreenContent() {
         </ScrollView>
 
         {/* Edit Contact Modal */}
-        {editModalVisible && (
-          <Modal transparent visible={editModalVisible} animationType="slide">
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-              style={{ flex: 1 }}
-            >
-              <View style={styles.modalOverlay}>
-                <View
-                style={[
-                  styles.modalCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    borderWidth: 1,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 18,
-                      fontWeight: "bold",
-                      color: colors.text,
-                    }}
-                  >
-                    Edit Contact Details
-                  </Text>
-                  <View style={{ flex: 1 }} />
-                  <Pressable onPress={() => setEditModalVisible(false)}>
-                    <Ionicons name="close" size={24} color={colors.text} />
-                  </Pressable>
-                </View>
+        <BottomDrawer
+          visible={editModalVisible}
+          onClose={() => setEditModalVisible(false)}
+          title="Edit Contact Details"
+        >
+          <View style={{ gap: 16, marginTop: 8 }}>
+            <TextInput
+              value={formData.name}
+              onChangeText={(val) =>
+                setFormData((prev) => ({ ...prev, name: val }))
+              }
+              placeholder="Full Name"
+              placeholderTextColor={colors.textMuted}
+              style={[glassInputStyle, styles.input]}
+            />
 
-                <TextInput
-                  value={formData.name}
-                  onChangeText={(val) =>
-                    setFormData((prev) => ({ ...prev, name: val }))
-                  }
-                  placeholder="Full Name"
-                  placeholderTextColor={colors.textMuted}
-                  style={[glassInputStyle, styles.input]}
-                />
-
-                <View style={{ marginBottom: 16 }}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Status
-                  </Text>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    {(
-                      ["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const
-                    ).map((opt) => {
-                      const isSel = formData.status === opt;
-                      return (
-                        <Pressable
-                          key={opt}
-                          onPress={() =>
-                            setFormData((prev) => ({ ...prev, status: opt }))
-                          }
-                          style={[
-                            styles.statusPill,
-                            isSel
-                              ? { backgroundColor: colors.primary }
-                              : {
-                                  backgroundColor: colors.bg,
-                                  borderColor: colors.border,
-                                  borderWidth: 1,
-                                },
-                          ]}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              color: isSel ? "#FFFFFF" : colors.textSecondary,
-                            }}
-                          >
-                            {opt}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <TextInput
-                  value={formData.email}
-                  onChangeText={(val) =>
-                    setFormData((prev) => ({ ...prev, email: val }))
-                  }
-                  placeholder="Email address"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="email-address"
-                  style={[glassInputStyle, styles.input]}
-                />
-
-                <TextInput
-                  value={formData.phone}
-                  onChangeText={(val) =>
-                    setFormData((prev) => ({ ...prev, phone: val }))
-                  }
-                  placeholder="Phone number"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="phone-pad"
-                  style={[glassInputStyle, styles.input]}
-                />
-
-                <TextInput
-                  value={formData.notes}
-                  onChangeText={(val) =>
-                    setFormData((prev) => ({ ...prev, notes: val }))
-                  }
-                  placeholder="Add notes..."
-                  placeholderTextColor={colors.textMuted}
-                  style={[glassInputStyle, styles.input, { height: 60 }]}
-                />
-
-                <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
-                  <Pressable
-                    onPress={() => setEditModalVisible(false)}
-                    style={[
-                      styles.modalCancelBtn,
-                      {
-                        borderColor: colors.border,
-                        borderWidth: 1,
-                        backgroundColor: "transparent",
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: colors.text, fontWeight: "bold" }}>
-                      Cancel
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={throttledUpdate}
-                    style={[
-                      styles.modalSaveBtn,
-                      { backgroundColor: colors.primary },
-                    ]}
-                  >
-                    <Text style={{ color: "#FFFFFF", fontWeight: "bold" }}>
-                      Save Changes
-                    </Text>
-                  </Pressable>
-                </View>
+            <View style={{ marginBottom: 8 }}>
+              <SectionLabel label="Status" />
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {(
+                  ["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const
+                ).map((opt) => (
+                  <PillButton
+                    key={opt}
+                    label={opt}
+                    selected={formData.status === opt}
+                    onPress={() =>
+                      setFormData((prev) => ({ ...prev, status: opt }))
+                    }
+                  />
+                ))}
               </View>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
-        )}
+
+            <TextInput
+              value={formData.email}
+              onChangeText={(val) =>
+                setFormData((prev) => ({ ...prev, email: val }))
+              }
+              placeholder="Email address"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="email-address"
+              style={[glassInputStyle, styles.input]}
+            />
+
+            <TextInput
+              value={formData.phone}
+              onChangeText={(val) =>
+                setFormData((prev) => ({ ...prev, phone: val }))
+              }
+              placeholder="Phone number"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="phone-pad"
+              style={[glassInputStyle, styles.input]}
+            />
+
+            <TextInput
+              value={formData.notes}
+              onChangeText={(val) =>
+                setFormData((prev) => ({ ...prev, notes: val }))
+              }
+              placeholder="Add notes..."
+              placeholderTextColor={colors.textMuted}
+              style={[glassInputStyle, styles.input, { height: 60 }]}
+            />
+
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
+              <Button
+                label="Cancel"
+                onPress={() => setEditModalVisible(false)}
+                variant="secondary"
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Save Changes"
+                onPress={throttledUpdate}
+                variant="primary"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </BottomDrawer>
 
         {/* Alerts */}
         <CustomAlert
@@ -889,8 +749,7 @@ function ContactDetailScreenContent() {
             setAlertConfig((prev) => ({ ...prev, visible: false }))
           }
         />
-      </SafeAreaView>
-    </Host>
+    </SafeAreaView>
   );
 }
 

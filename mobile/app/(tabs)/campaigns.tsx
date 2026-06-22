@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import  { useEffect, useState, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -11,7 +11,7 @@ import {
   Platform,
   RefreshControl,
   KeyboardAvoidingView,
-  InteractionManager,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -29,12 +29,15 @@ import {
 import { Lead, LeadStatus } from "../../shared/types";
 import { Ionicons } from "@expo/vector-icons";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { FilterPillRow } from "../../components/FilterPillRow";
+import { PillButton } from "../../components/PillButton";
+import { Button } from "../../components/Button";
+import { IconButton } from "../../components/IconButton";
 import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
 import { getSecureItem, saveSecureItem, useAppStore } from "../../services/store";
-import { Host, Switch } from "@expo/ui";
 import { APP_CONSTANTS } from "../../constant";
 import DateTimePicker from "@expo/ui/community/datetime-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -56,10 +59,10 @@ export default function CampaignsScreen() {
   const [isTransitionFinished, setIsTransitionFinished] = useState(false);
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
+    const timeout = setTimeout(() => {
       setIsTransitionFinished(true);
-    });
-    return () => task.cancel();
+    }, 150);
+    return () => clearTimeout(timeout);
   }, []);
 
   if (!isTransitionFinished) {
@@ -483,7 +486,7 @@ function CampaignsScreenContent() {
   };
 
   return (
-    <Host style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <SafeAreaView
         edges={["top"]}
         style={[styles.container, { backgroundColor: colors.bg }]}
@@ -568,17 +571,14 @@ function CampaignsScreenContent() {
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 Templates
               </Text>
-              <Pressable
+              <IconButton
+                icon="add-circle"
                 onPress={() => setTemplateModalVisible(true)}
-                style={styles.addTemplateBtn}
-              >
-                <Ionicons name="add-circle" size={20} color={colors.primary} />
-                <Text
-                  style={[styles.addTemplateBtnText, { color: colors.primary }]}
-                >
-                  Add
-                </Text>
-              </Pressable>
+                bgColor={colors.primarySoft}
+                color={colors.primary}
+                size={18}
+                style={{ width: 32, height: 32, borderRadius: 10 }}
+              />
             </View>
 
             <ScrollView style={styles.templatesList} nestedScrollEnabled>
@@ -636,37 +636,12 @@ function CampaignsScreenContent() {
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
               Target Funnel Stage
             </Text>
-            <View style={styles.stagesRow}>
-              {(["NEW", "CONTACTED", "QUALIFIED", "ALL"] as const).map(
-                (stage) => (
-                  <Pressable
-                    key={stage}
-                    onPress={() => { hapticLight(); setTargetStage(stage); }}
-                    style={[
-                      styles.filterBtn,
-                      targetStage === stage
-                        ? { backgroundColor: colors.primary }
-                        : {
-                            backgroundColor: colors.bg,
-                            borderColor: colors.border,
-                            borderWidth: 1,
-                          },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.filterBtnText,
-                        targetStage === stage
-                          ? { color: "#FFFFFF" }
-                          : { color: colors.textSecondary },
-                      ]}
-                    >
-                      {stage}
-                    </Text>
-                  </Pressable>
-                ),
-              )}
-            </View>
+            <FilterPillRow
+              options={["NEW", "CONTACTED", "QUALIFIED", "ALL"] as const}
+              selected={targetStage}
+              onSelect={setTargetStage}
+              style={{ paddingHorizontal: 0 }}
+            />
 
             {/* Select Template Dropdown */}
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
@@ -674,113 +649,30 @@ function CampaignsScreenContent() {
             </Text>
             <View style={styles.templatesSelectRow}>
               {templates.map((t) => (
-                <Pressable
+                <PillButton
                   key={t.id}
-                  onPress={() => { hapticLight(); setSelectedTemplateId(t.id); }}
-                  style={[
-                    styles.templateSelectBtn,
-                    selectedTemplateId === t.id
-                      ? {
-                          borderColor: colors.primary,
-                          backgroundColor: `${colors.primary}1A`,
-                        }
-                      : {
-                          borderColor: colors.border,
-                          backgroundColor: colors.bg,
-                        },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.templateSelectBtnText,
-                      selectedTemplateId === t.id
-                        ? { color: colors.primary }
-                        : { color: colors.textSecondary },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {t.title}
-                  </Text>
-                </Pressable>
+                  label={t.title}
+                  selected={selectedTemplateId === t.id}
+                  onPress={() => setSelectedTemplateId(t.id)}
+                />
               ))}
             </View>
 
             {/* Channel Select Row */}
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary, marginTop: 14 }]}>
               Messaging Channel
             </Text>
-            <View style={styles.channelRow}>
-              <Pressable
-                onPress={() => { hapticLight(); setCampaignChannel("whatsapp"); }}
-                style={[
-                  styles.channelBtn,
-                  campaignChannel === "whatsapp"
-                    ? {
-                        backgroundColor: `${colors.success}1A`,
-                        borderColor: colors.success,
-                      }
-                    : {
-                        backgroundColor: colors.bg,
-                        borderColor: colors.border,
-                      },
-                ]}
-              >
-                <Ionicons
-                  name="logo-whatsapp"
-                  size={16}
-                  color={
-                    campaignChannel === "whatsapp"
-                      ? colors.success
-                      : colors.textSecondary
-                  }
-                />
-                <Text
-                  style={[
-                    styles.channelBtnText,
-                    campaignChannel === "whatsapp"
-                      ? { color: colors.success }
-                      : { color: colors.textSecondary },
-                  ]}
-                >
-                  WhatsApp
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => { hapticLight(); setCampaignChannel("sms"); }}
-                style={[
-                  styles.channelBtn,
-                  campaignChannel === "sms"
-                    ? {
-                        backgroundColor: `${colors.primary}1A`,
-                        borderColor: colors.primary,
-                      }
-                    : {
-                        backgroundColor: colors.bg,
-                        borderColor: colors.border,
-                      },
-                ]}
-              >
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={16}
-                  color={
-                    campaignChannel === "sms"
-                      ? colors.primary
-                      : colors.textSecondary
-                  }
-                />
-                <Text
-                  style={[
-                    styles.channelBtnText,
-                    campaignChannel === "sms"
-                      ? { color: colors.primary }
-                      : { color: colors.textSecondary },
-                  ]}
-                >
-                  SMS App
-                </Text>
-              </Pressable>
+            <View style={styles.templatesSelectRow}>
+              <PillButton
+                label="WhatsApp"
+                selected={campaignChannel === "whatsapp"}
+                onPress={() => setCampaignChannel("whatsapp")}
+              />
+              <PillButton
+                label="SMS App"
+                selected={campaignChannel === "sms"}
+                onPress={() => setCampaignChannel("sms")}
+              />
             </View>
 
             {/* Campaign Image Upload Option */}
@@ -824,27 +716,13 @@ function CampaignsScreenContent() {
             )}
 
             {/* Trigger Button */}
-            <Pressable
-              onPress={() => { hapticHeavy(); executeBulkCampaign(); }}
-              disabled={campaignLoading}
-              style={[styles.triggerBtn, { backgroundColor: colors.primary }]}
-            >
-              {campaignLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Text style={styles.triggerBtnText}>
-                    Send Campaign to {targetLeads.length} leads
-                  </Text>
-                  <Ionicons
-                    name="send"
-                    size={14}
-                    color="#FFFFFF"
-                    style={styles.triggerIcon}
-                  />
-                </>
-              )}
-            </Pressable>
+            <Button
+              label={campaignLoading ? "Sending..." : `Send Campaign to ${targetLeads.length} leads`}
+              onPress={executeBulkCampaign}
+              disabled={campaignLoading || targetLeads.length === 0}
+              variant="primary"
+              style={{ marginTop: 16 }}
+            />
           </View>
 
           {/* Daily Reminders Scheduler Panel */}
@@ -878,28 +756,35 @@ function CampaignsScreenContent() {
 
             {/* Native Time Picker */}
             <View style={styles.timePickerContainer}>
-              <View style={[
-                styles.timeDisplayBtn,
-                {
-                  backgroundColor: colors.primarySoft,
-                  borderColor: colors.primary + "40",
-                }
-              ]}>
+              <Pressable
+                onPress={() => { hapticLight(); setShowTimePicker(prev => !prev); }}
+                style={[
+                  styles.timeDisplayBtn,
+                  {
+                    backgroundColor: colors.primarySoft,
+                    borderColor: colors.primary + "40",
+                  }
+                ]}
+              >
                 <Ionicons name="time-outline" size={18} color={colors.primary} />
                 <Text style={[styles.timeDisplayText, { color: colors.primary }]}>
                   {String(reminderTime.getHours()).padStart(2, "0")}:{String(reminderTime.getMinutes()).padStart(2, "0")}
                 </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <DateTimePicker
-                  value={reminderTime}
-                  mode="time"
-                  onChange={(event: any, date?: Date) => {
-                    if (date) handleTimeChange(date);
-                  }}
-                  display="spinner"
-                />
-              </View>
+              </Pressable>
+              
+              {showTimePicker && (
+                <View style={{ flex: 1 }}>
+                  <DateTimePicker
+                    value={reminderTime}
+                    mode="time"
+                    onChange={(event: any, date?: Date) => {
+                      setShowTimePicker(Platform.OS === "ios");
+                      if (date) handleTimeChange(date);
+                    }}
+                    display="spinner"
+                  />
+                </View>
+              )}
             </View>
 
             {reminderEnabled && (
@@ -1012,13 +897,12 @@ function CampaignsScreenContent() {
                   style={[glassInputStyle, styles.input, styles.multilineInput]}
                 />
 
-                <Pressable
+                <Button
+                  label="Save Template"
                   onPress={handleSaveTemplate}
-                  style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-                >
-                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                  <Text style={styles.saveBtnText}>Save Template</Text>
-                </Pressable>
+                  variant="primary"
+                  style={{ marginTop: 16 }}
+                />
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -1037,7 +921,7 @@ function CampaignsScreenContent() {
           }
         />
       </SafeAreaView>
-    </Host>
+    </View>
   );
 }
 

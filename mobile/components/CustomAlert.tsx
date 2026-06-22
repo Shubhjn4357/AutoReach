@@ -2,7 +2,7 @@ import React from "react";
 import { Modal, StyleSheet, View, Text, Pressable } from "react-native";
 import { useTheme } from "../services/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Host } from "@expo/ui";
+
 
 export interface AlertButton {
   text: string;
@@ -53,7 +53,7 @@ export function CustomAlert({
       visible={visible}
       onRequestClose={onClose}
     >
-      <Host style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <View style={styles.overlay}>
           <View
             style={[
@@ -122,7 +122,7 @@ export function CustomAlert({
             </View>
           </View>
         </View>
-      </Host>
+      </View>
     </Modal>
   );
 }

@@ -7,7 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import * as TaskManager from "expo-task-manager";
 import * as BackgroundTask from "expo-background-task";
 import * as Notifications from "expo-notifications";
-import { Host } from "@expo/ui";
+
 import { initDb, getPendingWhatsAppMessages, updateWhatsAppMessageStatus, logSentMessage } from "../services/db";
 import { bootstrapStore, useAppStore, getSecureItem, saveSecureItem } from "../services/store";
 import { ThemeProvider, useTheme } from "../services/theme";
@@ -499,7 +499,7 @@ function InnerRootLayout() {
   `;
 
   return (
-    <Host style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <StatusBar style={theme === "dark" ? "light" : "dark"} />
       <Stack
         screenOptions={{
@@ -572,7 +572,7 @@ function InnerRootLayout() {
           </View>
         </View>
       )}
-    </Host>
+    </View>
   );
 }
 
