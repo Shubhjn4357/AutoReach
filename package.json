@@ -2,6 +2,7 @@
   "name": "autoreach",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "web:dev": "tsx web/server.ts",
     "web:build": "next build web",

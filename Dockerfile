@@ -4,7 +4,7 @@ FROM node:22-slim
 WORKDIR /app
 
 # Install pnpm globally
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.15.0
 
 # Copy package files
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc tsconfig.json ./
