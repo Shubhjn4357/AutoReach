@@ -1,0 +1,26 @@
+# Ignore dependencies and build artifacts
+node_modules/
+.next/
+web/.next/
+web/tsconfig.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Ignore Mobile App source files (only package.json is needed)
+mobile/*
+!mobile/package.json
+
+# Ignore databases
+*.db
+local.db
+
+# Ignore Git files and IDE files
+.git
+.github
+.gitignore
+.idea
+.vscode
+.gemini
+.agents
+*.md
+Dockerfile
+railway.json
