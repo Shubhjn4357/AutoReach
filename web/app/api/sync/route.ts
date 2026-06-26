@@ -203,16 +203,16 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       data: {
-        leads: Array.from(leadsInMemoryDb.entries()).map(([id, val]) => ({
-          id,
-          ...val,
+        leads: Array.from(leadsInMemoryDb.entries()).map(([leadId, { id: _, ...leadRest }]) => ({
+          id: leadId,
+          ...leadRest,
         })),
-        tasks: Array.from(tasksInMemoryDb.entries()).map(([id, val]) => ({
-          id,
-          ...val,
-        })),
+        tasks: Array.from(tasksInMemoryDb.entries()).map(([taskId, { id: _, ...taskRest }]) => ({
+          id: taskId,
+          ...taskRest,
+        }))
       },
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
   }
 }

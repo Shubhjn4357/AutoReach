@@ -1,3 +1,5 @@
+import { getErrorMessage } from "./api";
+
 export interface SMSMessageResult {
   success: boolean;
   messageId?: string;
@@ -35,11 +37,11 @@ export async function sendSMS(
       );
       if (!response.ok)
         throw new Error(`Twilio responded with code: ${response.status}`);
-      const data = await response.json();
+      const data = await response.json() as { sid: string };
       return { success: true, messageId: data.sid, gatewayType: "TWILIO" };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Twilio SMS failed:", error);
-      return { success: false, gatewayType: "TWILIO", error: error.message };
+      return { success: false, gatewayType: "TWILIO", error: getErrorMessage(error) };
     }
   }
 
@@ -64,12 +66,12 @@ export async function sendSMS(
       messageId: `gw_${Date.now()}`,
       gatewayType: "ANDROID_GATEWAY",
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("SMS Gateway trigger failed:", error);
     return {
       success: false,
       gatewayType: "ANDROID_GATEWAY",
-      error: error.message,
+      error: getErrorMessage(error),
     };
   }
 }

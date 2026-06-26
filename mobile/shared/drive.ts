@@ -1,3 +1,5 @@
+import { getErrorMessage } from "./api";
+
 export interface DriveUploadResult {
   success: boolean;
   fileId: string;
@@ -60,7 +62,7 @@ export async function uploadToGoogleDrive(
     );
     if (!response.ok)
       throw new Error(`Google API responded with status ${response.status}`);
-    const data = await response.json();
+    const data = await response.json() as { id: string; name?: string; mimeType?: string };
     return {
       success: true,
       fileId: data.id,
@@ -72,7 +74,7 @@ export async function uploadToGoogleDrive(
           : fileContent.byteLength,
       webViewLink: `https://drive.google.com/open?id=${data.id}`,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Drive upload failed:", error);
     return {
       success: false,
@@ -80,7 +82,7 @@ export async function uploadToGoogleDrive(
       name: fileName,
       mimeType,
       size: 0,
-      error: error.message,
+      error: getErrorMessage(error),
     };
   }
 }

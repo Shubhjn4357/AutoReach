@@ -1,8 +1,10 @@
+import { type JsonValue, getErrorMessage } from "./api";
+
 export interface PushPayload {
   to: string;
   title: string;
   body: string;
-  data?: Record<string, any>;
+  data?: Record<string, JsonValue>;
   sound?: "default" | null;
 }
 
@@ -27,7 +29,7 @@ export async function sendPushNotification(
     });
     if (!response.ok)
       throw new Error(`Expo responded with status: ${response.status}`);
-    const resData = await response.json();
+    const resData = await response.json() as { data?: { status?: string; id?: string; message?: string } };
     const ticket = resData.data;
     if (ticket && ticket.status === "ok") {
       return { success: true, status: ticket.status, id: ticket.id };
@@ -37,8 +39,8 @@ export async function sendPushNotification(
       status: ticket?.status || "error",
       error: ticket?.message,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Expo push failed:", error);
-    return { success: false, error: error.message };
+    return { success: false, error: getErrorMessage(error) };
   }
 }

@@ -1,2 +1,4 @@
-export const leadsInMemoryDb = new Map<string, any>();
-export const tasksInMemoryDb = new Map<string, any>();
+import type { Lead, Task } from "../../../shared/types";
+
+export const leadsInMemoryDb = new Map<string, Lead>();
+export const tasksInMemoryDb = new Map<string, Task>();

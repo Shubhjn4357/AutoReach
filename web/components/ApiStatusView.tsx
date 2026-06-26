@@ -109,9 +109,9 @@ export default function ApiStatusView({
             </div>
             <span
               className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                apiHealth.tasks.status === "healthy"
+                apiHealth.tasks?.status === "healthy"
                   ? "bg-[var(--color-success)]"
-                  : apiHealth.tasks.status === "error"
+                  : apiHealth.tasks?.status === "error"
                     ? "bg-[var(--color-danger)]"
                     : "bg-[var(--color-border)]"
               }`}
@@ -126,14 +126,14 @@ export default function ApiStatusView({
               <span>
                 Status:{" "}
                 <strong className="text-[var(--color-text-primary)] capitalize">
-                  {apiHealth.tasks.status}
+                  {apiHealth.tasks?.status}
                 </strong>
               </span>
-              {apiHealth.tasks.latency !== null && (
+              {apiHealth.tasks?.latency !== null && (
                 <span>
                   Latency:{" "}
                   <strong className="text-[var(--color-text-primary)]">
-                    {apiHealth.tasks.latency}ms
+                    {apiHealth.tasks?.latency}ms
                   </strong>
                 </span>
               )}

@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 500,
   },
   headerContainer: {
     marginBottom: 20,

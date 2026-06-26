@@ -62,3 +62,14 @@ Please refer to the `docs/` folder for comprehensive blueprints and specificatio
 4. **Run dev servers**:
    - Web console: `pnpm web:dev`
    - Mobile Expo client: `pnpm mobile:start`
+
+## Database Migrations
+
+After pulling changes, run the following to apply any new schema changes:
+
+`ash
+pnpm db:push
+`
+
+This will update the SQLite database with the latest tables (e.g., contacts, groups, messages, settings, campaigns, campaign_recipients).
+

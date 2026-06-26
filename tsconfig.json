@@ -1,26 +1,49 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "baseUrl": ".",
+    "types": ["node"],
     "paths": {
-      "@/shared/*": ["shared/*"],
-      "@/web/*": ["web/*"],
-      "@/mobile/*": ["mobile/*"]
+      "@/*": [
+        "./web/*"
+      ],
+      "@/shared/*": [
+        "./shared/*"
+      ],
+      "@/web/*": [
+        "./web/*"
+      ],
+      "@/mobile/*": [
+        "./mobile/*"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", "mobile", "web"],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "OpenWA",
+    "node_modules",
+    "dist",
+    "mobile",
+    "web/src",
+    "openwa.ts"
+  ],
   "extends": "expo/tsconfig.base"
 }

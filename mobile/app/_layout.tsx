@@ -13,7 +13,7 @@ import { bootstrapStore, useAppStore, getSecureItem, saveSecureItem } from "../s
 import { ThemeProvider, useTheme } from "../services/theme";
 import { registerForPushNotificationsAsync } from "../services/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WebView } from "react-native-webview";
+
 import { APP_CONSTANTS } from "../constant";
 import { StyleSheet, Pressable, View, Text, AppState } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -173,7 +173,7 @@ function InnerRootLayout() {
   const [activeJob, setActiveJob] = useState<any>(null);
   const webViewRef = useRef<any>(null);
   const isWebviewLoaded = useRef(false);
-  const RNWebView = WebView as any;
+  
 
   useEffect(() => {
     async function prepare() {

@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../services/theme";
 import { hapticLight } from "../services/haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -29,7 +30,7 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
   style,
 }) => {
   const { colors, glassStyle } = useTheme();
-
+  const insets = useSafeAreaInsets();
   if (selectedCount === 0) return null;
 
   return (
@@ -42,6 +43,9 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
           borderColor: colors.border,
         },
         style,
+        {
+          bottom:insets.bottom + 88
+        }
       ]}
     >
       <View style={styles.topRow}>
@@ -98,7 +102,6 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 24,
     left: 16,
     right: 16,
     padding: 16,

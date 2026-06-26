@@ -8,7 +8,7 @@ import makeWASocket, {
   SignalDataTypeMap,
 } from "@whiskeysockets/baileys";
 import { db } from "../../shared/dbClient";
-import { whatsappAuth, whatsappSessions } from "../../shared/db";
+import { whatsappAuth, whatsappSessions, webhooks } from "../../shared/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { BatchItem } from "drizzle-orm/batch";
 import * as qrcode from "qrcode";
@@ -211,6 +211,24 @@ export class WhatsAppManager {
         await saveCreds();
       });
 
+      // Event: Messages Upsert
+      sock.ev.on("messages.upsert", async (m) => {
+        const { messages, type } = m;
+        if (type !== "notify") return;
+        for (const msg of messages) {
+          const isFromMe = msg.key.fromMe;
+          const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
+          const eventType = isFromMe ? "message.sent" : "message.received";
+          await this.triggerWebhooks(sessionId, eventType, {
+            id: msg.key.id,
+            from: msg.key.remoteJid,
+            to: isFromMe ? msg.key.remoteJid : sock.user?.id || sock.user?.name || "unknown",
+            body,
+            timestamp: msg.messageTimestamp,
+          });
+        }
+      });
+
       // Event: Connection Update
       sock.ev.on("connection.update", async (update) => {
         const { connection, qr, lastDisconnect } = update;
@@ -389,6 +407,36 @@ export class WhatsAppManager {
   }
 
   /**
+   * Helper to dispatch session status and message events to webhooks
+   */
+  private async triggerWebhooks(sessionId: string, eventType: string, data: any) {
+    try {
+      const activeWebhooks = await db.select().from(webhooks).where(eq(webhooks.sessionId, sessionId));
+      for (const w of activeWebhooks) {
+        if (w.active !== 1) continue;
+        const eventsList = JSON.parse(w.events) as string[];
+        if (eventsList.includes("*") || eventsList.includes(eventType)) {
+          const payload = {
+            event: eventType,
+            sessionId,
+            timestamp: Date.now(),
+            data,
+          };
+          fetch(w.url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }).catch((err) => {
+            console.warn(`Webhook failed for ${w.url}:`, err.message);
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to trigger webhooks:", err);
+    }
+  }
+
+  /**
    * Save status update helper
    */
   private async updateSessionStatus(sessionId: string, status: string, qrCode: string | null) {
@@ -408,5 +456,11 @@ export class WhatsAppManager {
           updatedAt: Date.now(),
         },
       });
+
+    // Dispatch status change events to webhooks
+    await this.triggerWebhooks(sessionId, "session.status", { status: status.toLowerCase() });
+    if (qrCode) {
+      await this.triggerWebhooks(sessionId, "session.qr", { qrCode });
+    }
   }
 }
