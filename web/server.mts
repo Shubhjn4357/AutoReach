@@ -5,7 +5,7 @@ import { WhatsAppManager } from "./services/whatsappManager";
 import { Request, Response, NextFunction } from "express";
 import { verifyToken, JWTPayload } from "../shared/auth";
 import { db } from "../shared/dbClient";
-import { whatsappSessions, whatsappAuth, webhooks, messageTemplates, apiKeys, auditLogs, leads } from "../shared/db";
+import { whatsappSessions, whatsappAuth, webhooks, messageTemplates, apiKeys, auditLogs, leads, contacts } from "../shared/db";
 import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -836,8 +836,8 @@ app.prepare().then(async () => {
   // --- Contacts Endpoints ---
 server.get("/api/contacts", async (req, res) => {
   try {
-    const contacts = await db.select().from(contacts);
-    res.json(contacts);
+    const contactsList = await db.select().from(contacts);
+    res.json(contactsList);
   } catch (err) {
     res.status(500).json({ success: false, error: String(err) });
   }
@@ -852,14 +852,14 @@ server.get("/api/contacts/:id", async (req, res) => {
     }
     res.json(contact[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/contacts", parseBody, async (req, res) => {
   try {
     const { sessionId, name, pushName, phone, isWhatsappUser, labels } = req.body;
-    const id = \`contact_${crypto.randomUUID()}\`;
+    const id = `contact_${crypto.randomUUID()}`;
     await db.insert(contacts).values({
       id,
       sessionId: sessionId || null,
@@ -873,7 +873,7 @@ server.post("/api/contacts", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -892,7 +892,7 @@ server.put("/api/contacts/:id", parseBody, async (req, res) => {
     }).where(eq(contacts.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -902,7 +902,7 @@ server.delete("/api/contacts/:id", async (req, res) => {
     await db.delete(contacts).where(eq(contacts.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -912,7 +912,7 @@ server.get("/api/groups", async (req, res) => {
     const groups = await db.select().from(groups);
     res.json(groups);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -925,14 +925,14 @@ server.get("/api/groups/:id", async (req, res) => {
     }
     res.json(group[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/groups", parseBody, async (req, res) => {
   try {
     const { sessionId, groupJid, name, description } = req.body;
-    const id = \`group_${crypto.randomUUID()}\`;
+    const id = `group_${crypto.randomUUID()}`;
     await db.insert(groups).values({
       id,
       sessionId: sessionId || null,
@@ -944,7 +944,7 @@ server.post("/api/groups", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -961,7 +961,7 @@ server.put("/api/groups/:id", parseBody, async (req, res) => {
     }).where(eq(groups.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -971,7 +971,7 @@ server.delete("/api/groups/:id", async (req, res) => {
     await db.delete(groups).where(eq(groups.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -981,7 +981,7 @@ server.get("/api/group-participants", async (req, res) => {
     const participants = await db.select().from(groupParticipants);
     res.json(participants);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -994,14 +994,14 @@ server.get("/api/group-participants/:id", async (req, res) => {
     }
     res.json(participant[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/group-participants", parseBody, async (req, res) => {
   try {
     const { groupId, participantJid, isAdmin, joinedAt } = req.body;
-    const id = \`gp_${crypto.randomUUID()}\`;
+    const id = `gp_${crypto.randomUUID()}`;
     await db.insert(groupParticipants).values({
       id,
       groupId,
@@ -1011,7 +1011,7 @@ server.post("/api/group-participants", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1027,7 +1027,7 @@ server.put("/api/group-participants/:id", parseBody, async (req, res) => {
     }).where(eq(groupParticipants.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1037,7 +1037,7 @@ server.delete("/api/group-participants/:id", async (req, res) => {
     await db.delete(groupParticipants).where(eq(groupParticipants.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1047,7 +1047,7 @@ server.get("/api/messages", async (req, res) => {
     const messages = await db.select().from(messages);
     res.json(messages);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1060,14 +1060,14 @@ server.get("/api/messages/:id", async (req, res) => {
     }
     res.json(message[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/messages", parseBody, async (req, res) => {
   try {
     const { messageId, sessionId, chatId, fromMe, sender, type, body, caption, mediaUrl, timestamp, receivedAt } = req.body;
-    const id = \`msg_${crypto.randomUUID()}\`;
+    const id = `msg_${crypto.randomUUID()}`;
     await db.insert(messages).values({
       id,
       messageId,
@@ -1084,7 +1084,7 @@ server.post("/api/messages", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1107,7 +1107,7 @@ server.put("/api/messages/:id", parseBody, async (req, res) => {
     }).where(eq(messages.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1117,7 +1117,7 @@ server.delete("/api/messages/:id", async (req, res) => {
     await db.delete(messages).where(eq(messages.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1127,7 +1127,7 @@ server.get("/api/templates", async (req, res) => {
     const templates = await db.select().from(messageTemplates);
     res.json(templates);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1140,14 +1140,14 @@ server.get("/api/templates/:id", async (req, res) => {
     }
     res.json(template[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/templates", parseBody, async (req, res) => {
   try {
     const { sessionId, name, body, header, footer } = req.body;
-    const id = \`tpl_${crypto.randomUUID()}\`;
+    const id = `tpl_${crypto.randomUUID()}`;
     await db.insert(messageTemplates).values({
       id,
       sessionId: sessionId || null,
@@ -1160,7 +1160,7 @@ server.post("/api/templates", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1178,7 +1178,7 @@ server.put("/api/templates/:id", parseBody, async (req, res) => {
     }).where(eq(messageTemplates.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1188,7 +1188,7 @@ server.delete("/api/templates/:id", async (req, res) => {
     await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1198,7 +1198,7 @@ server.get("/api/campaigns", async (req, res) => {
     const campaigns = await db.select().from(campaigns);
     res.json(campaigns);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1211,14 +1211,14 @@ server.get("/api/campaigns/:id", async (req, res) => {
     }
     res.json(campaign[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/campaigns", parseBody, async (req, res) => {
   try {
     const { name, messageTemplateId, status, scheduledAt, startedAt, finishedAt } = req.body;
-    const id = \`camp_${crypto.randomUUID()}\`;
+    const id = `camp_${crypto.randomUUID()}`;
     await db.insert(campaigns).values({
       id,
       name,
@@ -1232,7 +1232,7 @@ server.post("/api/campaigns", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1251,7 +1251,7 @@ server.put("/api/campaigns/:id", parseBody, async (req, res) => {
     }).where(eq(campaigns.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1261,7 +1261,7 @@ server.delete("/api/campaigns/:id", async (req, res) => {
     await db.delete(campaigns).where(eq(campaigns.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1271,7 +1271,7 @@ server.get("/api/campaign-recipients", async (req, res) => {
     const recipients = await db.select().from(campaignRecipients);
     res.json(recipients);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1284,14 +1284,14 @@ server.get("/api/campaign-recipients/:id", async (req, res) => {
     }
     res.json(recipient[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/campaign-recipients", parseBody, async (req, res) => {
   try {
     const { campaignId, contactId, status, attemptedAt, completedAt } = req.body;
-    const id = \`cr_${crypto.randomUUID()}\`;
+    const id = `cr_${crypto.randomUUID()}`;
     await db.insert(campaignRecipients).values({
       id,
       campaignId,
@@ -1302,7 +1302,7 @@ server.post("/api/campaign-recipients", parseBody, async (req, res) => {
     });
     res.json({ id, ...req.body });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1319,7 +1319,7 @@ server.put("/api/campaign-recipients/:id", parseBody, async (req, res) => {
     }).where(eq(campaignRecipients.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1329,7 +1329,7 @@ server.delete("/api/campaign-recipients/:id", async (req, res) => {
     await db.delete(campaignRecipients).where(eq(campaignRecipients.id, id));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1339,7 +1339,7 @@ server.get("/api/settings", async (req, res) => {
     const settings = await db.select().from(settings);
     res.json(settings);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1352,14 +1352,14 @@ server.get("/api/settings/:key", async (req, res) => {
     }
     res.json(setting[0]);
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
 server.post("/api/settings", parseBody, async (req, res) => {
   try {
     const { key, value } = req.body;
-    const id = \`setting_${crypto.randomUUID()}\`;
+    const id = `setting_${crypto.randomUUID()}`;
     await db.insert(settings).values({
       id,
       key,
@@ -1369,7 +1369,7 @@ server.post("/api/settings", parseBody, async (req, res) => {
     });
     res.json({ id, key, value, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1383,7 +1383,7 @@ server.put("/api/settings/:key", parseBody, async (req, res) => {
     }).where(eq(settings.key, key));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
 });
 
@@ -1393,9 +1393,9 @@ server.delete("/api/settings/:key", async (req, res) => {
     await db.delete(settings).where(eq(settings.key, key));
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: String(err) );
+    res.status(500).json({ success: false, error: String(err) } );
   }
-}
+});
 // --- Fallback Next.js Handler ---
   server.use((req, res) => {
     return handle(req, res);
@@ -1405,6 +1405,7 @@ server.delete("/api/settings/:key", async (req, res) => {
     console.log(`> Standalone persistent server listening on port ${port}`);
   });
 });
+
 
 
 

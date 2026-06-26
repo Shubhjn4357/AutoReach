@@ -1,0 +1,13 @@
+
+> autoreach@1.0.0 mobile:start D:\Code\AutoReach
+> expo start mobile
+
+Starting project at D:\Code\AutoReach\mobile
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+ ERROR  An unknown error occurred while installing React Native DevTools. Details:
+
+spawn EPERM
+Waiting on http://localhost:8081
+Logs for your project will appear below.

@@ -1,0 +1,5 @@
+
+> autoreach@1.0.0 web:dev D:\Code\AutoReach
+> tsx web/server.mts
+
+ ELIFECYCLE  Command failed with exit code 1.
