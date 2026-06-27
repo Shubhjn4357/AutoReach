@@ -6,7 +6,7 @@
   "scripts": {
     "web:dev": "tsx --env-file=.env web/server.mts",
     "web:build": "next build web",
-    "web:start": "NODE_ENV=production tsx --env-file=.env web/server.mts",
+    "web:start": "NODE_ENV=production tsx web/server.mts",
     "mobile:start": "expo start mobile",
     "mobile:ios": "expo start mobile --ios",
     "mobile:android": "expo start mobile --android",
