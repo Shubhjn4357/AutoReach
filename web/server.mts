@@ -13,6 +13,7 @@ import { templateService } from "./services/templateService";
 import { crmService } from "./services/crmService";
 import { sessionService } from "./services/sessionService";
 import { WhatsAppManager } from "./services/whatsappManager";
+import { redisService } from "./services/redisService";
 
 // Database entities
 import { db } from "../shared/dbClient";
@@ -610,11 +611,12 @@ app.prepare().then(async () => {
   });
 
   server.get("/api/infra/status", authenticateApiKey, async (req, res) => {
+    const redisInfo = redisService.getBrokerStatus();
     return res.json({
       database: { connected: true, type: "sqlite", host: "local.db" },
-      redis: { connected: false, host: "127.0.0.1", port: 6379 },
+      redis: { connected: redisInfo.connected, host: redisInfo.host, port: redisInfo.port },
       queue: {
-        enabled: false,
+        enabled: redisInfo.connected,
         messages: { pending: 0, completed: 0, failed: 0 },
         webhooks: { pending: 0, completed: 0, failed: 0 }
       },
@@ -624,10 +626,11 @@ app.prepare().then(async () => {
   });
 
   server.get("/api/infra/config", authenticateApiKey, async (req, res) => {
+    const redisInfo = redisService.getBrokerStatus();
     return res.json({
       database: { type: "sqlite", builtIn: true, host: "local.db", port: "", username: "", database: "local.db", poolSize: 10, sslEnabled: false, sslRejectUnauthorized: false, passwordSet: false },
-      redis: { enabled: false, builtIn: false, host: "127.0.0.1", port: "6379", passwordSet: false },
-      queue: { enabled: false },
+      redis: { enabled: redisInfo.enabled, builtIn: false, host: redisInfo.host, port: String(redisInfo.port), passwordSet: true },
+      queue: { enabled: redisInfo.connected },
       storage: { type: "local", builtIn: true, localPath: "./data", s3Bucket: "", s3Region: "", s3Endpoint: "", s3CredentialsSet: false },
       engine: { headless: true, sessionDataPath: "./sessions", browserArgs: "" }
     });

@@ -106,18 +106,29 @@ export default function InfrastructureView() {
           <div className="space-y-2 text-sm text-[var(--color-text-secondary)]">
             <div className="flex justify-between">
               <span>Status</span>
-              <span className="text-zinc-500 font-semibold flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
-                Bypassed
-              </span>
+              {(status as any)?.redis?.connected ? (
+                <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Connected
+                </span>
+              ) : (
+                <span className="text-zinc-500 font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+                  Bypassed
+                </span>
+              )}
             </div>
             <div className="flex justify-between">
               <span>Broker Mode</span>
-              <span className="text-white">SQLite Memory Fallback</span>
+              <span className="text-white">
+                {(status as any)?.redis?.connected ? "Redis Distributed Broker" : "SQLite Memory Fallback"}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Hostname</span>
-              <span className="font-mono text-white">127.0.0.1:6379</span>
+              <span className="font-mono text-white">
+                {(status as any)?.redis?.host || "127.0.0.1"}:{(status as any)?.redis?.port || 6379}
+              </span>
             </div>
           </div>
         </div>
