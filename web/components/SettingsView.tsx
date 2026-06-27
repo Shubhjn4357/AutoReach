@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Sun, Moon, QrCode, LogOut, RefreshCw, Link2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import api from "../app/lib/api";
 
 interface SettingsViewProps {
   tempProfileName: string;
@@ -31,8 +32,7 @@ export default function SettingsView({
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch("/api/whatsapp/status");
-        const json = await res.json();
+        const json = (await api.whatsapp.status()) as any;
         if (json.success && json.data) {
           setWaStatus(json.data.status);
           setPhoneNumber(json.data.phoneNumber);
@@ -40,8 +40,7 @@ export default function SettingsView({
 
           // If QR is ready, fetch the QR code
           if (json.data.status === "QR_READY") {
-            const qrRes = await fetch("/api/whatsapp/qr");
-            const qrJson = await qrRes.json();
+            const qrJson = (await api.whatsapp.qr()) as any;
             if (qrJson.success && qrJson.data) {
               setQrCode(qrJson.data.qrCode);
             }
@@ -62,14 +61,7 @@ export default function SettingsView({
   const handleConnect = async () => {
     setActionLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/connect", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      const json = await res.json();
+      const json = (await api.whatsapp.connect()) as any;
       if (!json.success) {
         alert(json.error?.message || "Failed to trigger connect loop");
       }
@@ -83,14 +75,7 @@ export default function SettingsView({
   const handleDisconnect = async () => {
     setActionLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/disconnect", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      const json = await res.json();
+      const json = (await api.whatsapp.disconnect()) as any;
       if (json.success) {
         setWaStatus("DISCONNECTED");
         setQrCode(null);
@@ -108,14 +93,7 @@ export default function SettingsView({
     if (!confirm("Are you sure you want to unlink and delete WhatsApp credentials?")) return;
     setActionLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/logout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      const json = await res.json();
+      const json = (await api.whatsapp.logout()) as any;
       if (json.success) {
         setWaStatus("DISCONNECTED");
         setQrCode(null);

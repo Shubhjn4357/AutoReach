@@ -29,10 +29,11 @@ TaskManager.defineTask(BACKGROUND_WHATSAPP_QUEUE, async () => {
   console.log("[Background Task] Running background WhatsApp outbox processor...");
   try {
     const isLinked = await getSecureItem("whatsapp_linked_locally");
-    const gatewayUrl = await getSecureItem("whatsapp_gateway_url");
+    const token = await getSecureItem("auth_token");
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 
-    if (isLinked !== "true" || !gatewayUrl) {
-      console.log("[Background Task] WhatsApp gateway not linked or configured. Skipping.");
+    if (isLinked !== "true" || !token) {
+      console.log("[Background Task] WhatsApp gateway not linked or token missing. Skipping.");
       return BackgroundTask.BackgroundTaskResult.Success;
     }
 
@@ -48,14 +49,15 @@ TaskManager.defineTask(BACKGROUND_WHATSAPP_QUEUE, async () => {
       await updateWhatsAppMessageStatus(msg.id, "PROCESSING");
       try {
         const cleanPhone = msg.recipientPhone.replace(/[^0-9]/g, "");
-        const response = await fetch(`${gatewayUrl}/send`, {
+        const response = await fetch(`${apiUrl}/api/whatsapp/send`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
           },
           body: JSON.stringify({
             phone: cleanPhone,
-            message: msg.messageBody,
+            text: msg.messageBody,
           }),
         });
 
@@ -170,9 +172,7 @@ function InnerRootLayout() {
   }, [isBiometricLocked]);
 
   // WhatsApp local session queue processor
-  const [activeJob, setActiveJob] = useState<any>(null);
-  const webViewRef = useRef<any>(null);
-  const isWebviewLoaded = useRef(false);
+  // (WebView removed - direct API dispatch is used)
   
 
   useEffect(() => {
@@ -259,244 +259,57 @@ function InnerRootLayout() {
     checkNav();
   }, [store.token, appReady]);
 
-  // Queue polling effect
+  // Foreground WhatsApp Queue Processor (without WebView)
   useEffect(() => {
     if (!appReady) return;
+    let timerId: any;
     
-    let intervalId: any;
     async function processQueue() {
-      if (activeJob) return;
-
-      const isLinked = await getSecureItem("whatsapp_linked_locally");
-      if (isLinked !== "true") return;
-
       try {
+        const isLinked = await getSecureItem("whatsapp_linked_locally");
+        const token = await getSecureItem("auth_token");
+        const apiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+
+        if (isLinked !== "true" || !token) return;
+
         const pending = await getPendingWhatsAppMessages();
         if (pending.length === 0) return;
 
-        const nextMsg = pending[0];
-        setActiveJob(nextMsg);
-        await updateWhatsAppMessageStatus(nextMsg.id, "PROCESSING");
-
-        const cleanPhone = nextMsg.recipientPhone.replace(/[^0-9]/g, "");
-
-        if (nextMsg.mediaUri) {
+        for (const msg of pending) {
+          await updateWhatsAppMessageStatus(msg.id, "PROCESSING");
           try {
-            const response = await fetch(nextMsg.mediaUri);
-            const blob = await response.blob();
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = () => {
-              const base64Str = reader.result as string;
-              const waUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
-              isWebviewLoaded.current = false;
-              webViewRef.current?.injectJavaScript(`window.location.href = "${waUrl}";`);
+            const cleanPhone = msg.recipientPhone.replace(/[^0-9]/g, "");
+            const response = await fetch(`${apiUrl}/api/whatsapp/send`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                phone: cleanPhone,
+                text: msg.messageBody,
+              }),
+            });
 
-              const runImageAutomation = () => {
-                if (!isWebviewLoaded.current) {
-                  setTimeout(runImageAutomation, 1000);
-                  return;
-                }
-
-                const escapedCaption = nextMsg.messageBody.replace(/["'\\\r\n]/g, (match) => {
-                  if (match === '\r') return '';
-                  if (match === '\n') return '\\n';
-                  return '\\' + match;
-                });
-
-                const mediaScript = `
-                  (function() {
-                    let checkCount = 0;
-                    const maxChecks = 40;
-                    
-                    async function checkImageInput() {
-                      checkCount++;
-                      
-                      const dialogs = document.querySelectorAll('div[role="dialog"]');
-                      for (const d of dialogs) {
-                        if (d.textContent.includes('invalid') || d.textContent.includes('not exist') || d.textContent.includes('Invalid')) {
-                          const btn = d.querySelector('button');
-                          if (btn) btn.click();
-                          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: 'Invalid phone number' }));
-                          return;
-                        }
-                      }
-
-                      const fileInput = document.querySelector('input[type="file"][accept*="image"]') || document.querySelector('input[type="file"]');
-                      if (fileInput) {
-                        try {
-                          const base64Data = "${base64Str}";
-                          const response = await fetch(base64Data);
-                          const blob = await response.blob();
-                          const file = new File([blob], "image.jpg", { type: "image/jpeg" });
-                          
-                          const dataTransfer = new DataTransfer();
-                          dataTransfer.items.add(file);
-                          fileInput.files = dataTransfer.files;
-                          fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                          
-                          let previewChecks = 0;
-                          function checkPreviewSend() {
-                            previewChecks++;
-                            
-                            const captionText = "${escapedCaption}";
-                            const captionEditor = document.querySelector('div[contenteditable="true"]');
-                            if (captionEditor && captionText) {
-                              captionEditor.focus();
-                              document.execCommand('insertText', false, captionText);
-                            }
-                            
-                            const mediaSendBtn = document.querySelector('span[data-icon="send"]')?.closest('button') ||
-                                                 document.querySelector('button[aria-label="Send"]') ||
-                                                 document.querySelector('div[role="button"] span[data-icon="send"]')?.closest('button');
-                            if (mediaSendBtn) {
-                              mediaSendBtn.click();
-                              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SENT' }));
-                            } else if (previewChecks < 20) {
-                              setTimeout(checkPreviewSend, 500);
-                            } else {
-                              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: 'Timeout waiting for media send' }));
-                            }
-                          }
-                          setTimeout(checkPreviewSend, 1500);
-                        } catch (e) {
-                          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: e.message }));
-                        }
-                      } else if (checkCount < maxChecks) {
-                        const attachBtn = document.querySelector('span[data-icon="plus"]') || document.querySelector('span[data-icon="attach-menu-portraits"]');
-                        if (attachBtn) attachBtn.click();
-                        setTimeout(checkImageInput, 1000);
-                      } else {
-                        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: 'Timeout waiting for file input' }));
-                      }
-                    }
-                    setTimeout(checkImageInput, 4000);
-                  })();
-                `;
-                webViewRef.current?.injectJavaScript(mediaScript);
-              };
-              
-              setTimeout(runImageAutomation, 3000);
-            };
-          } catch (fileErr: any) {
-            console.error("Local file fetch error:", fileErr);
-            updateWhatsAppMessageStatus(nextMsg.id, "FAILED", fileErr.message || "File read error").catch(console.warn);
-            setActiveJob(null);
+            if (response.ok) {
+              await updateWhatsAppMessageStatus(msg.id, "SENT");
+              await logSentMessage("whatsapp", msg.recipientPhone, "LOCAL_FOREGROUND_AUTO");
+            } else {
+              const errText = await response.text().catch(() => "Response not OK");
+              await updateWhatsAppMessageStatus(msg.id, "FAILED", errText);
+            }
+          } catch (err: any) {
+            await updateWhatsAppMessageStatus(msg.id, "FAILED", err.message || "Network error");
           }
-        } else {
-          const escapedText = encodeURIComponent(nextMsg.messageBody);
-          const waUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${escapedText}`;
-          isWebviewLoaded.current = false;
-          webViewRef.current?.injectJavaScript(`window.location.href = "${waUrl}";`);
-
-          const runTextAutomation = () => {
-            if (!isWebviewLoaded.current) {
-              setTimeout(runTextAutomation, 1000);
-              return;
-            }
-
-            const textScript = `
-              (function() {
-                let checkCount = 0;
-                const maxChecks = 40;
-                function check() {
-                  checkCount++;
-                  
-                  const dialogs = document.querySelectorAll('div[role="dialog"]');
-                  for (const d of dialogs) {
-                    if (d.textContent.includes('invalid') || d.textContent.includes('not exist') || d.textContent.includes('Invalid')) {
-                      const btn = d.querySelector('button');
-                      if (btn) btn.click();
-                      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: 'Invalid phone number' }));
-                      return;
-                    }
-                  }
-                  
-                  const btn = document.querySelector('span[data-icon="send"]')?.closest('button') ||
-                              document.querySelector('button[aria-label="Send"]');
-                  if (btn) {
-                    btn.click();
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SENT' }));
-                  } else if (checkCount < maxChecks) {
-                    setTimeout(check, 1000);
-                  } else {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'FAILED', error: 'Timeout waiting for send button' }));
-                  }
-                }
-                setTimeout(check, 4000);
-              })();
-            `;
-            webViewRef.current?.injectJavaScript(textScript);
-          };
-          
-          setTimeout(runTextAutomation, 3000);
         }
-
-        const activeJobId = nextMsg.id;
-        setTimeout(() => {
-          setActiveJob((current: any) => {
-            if (current && current.id === activeJobId) {
-              updateWhatsAppMessageStatus(activeJobId, "FAILED", "Job timeout").catch(console.warn);
-              return null;
-            }
-            return current;
-          });
-        }, 45000);
-
-      } catch (err: any) {
-        console.warn("Queue loop error:", err);
+      } catch (err) {
+        console.warn("Foreground queue check failed:", err);
       }
     }
 
-    intervalId = setInterval(processQueue, 5000);
-    return () => clearInterval(intervalId);
-  }, [appReady, activeJob]);
-
-  const handleWebViewLoadEnd = () => {
-    isWebviewLoaded.current = true;
-  };
-
-  const handleWebViewMessage = async (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === "LOGIN_SUCCESS") {
-        await saveSecureItem("whatsapp_linked_locally", "true");
-        store.setWaWebStep("success");
-        setTimeout(() => {
-          store.setWaWebVisible(false);
-        }, 1500);
-      } else if (data.type === "SENT") {
-        if (activeJob) {
-          await updateWhatsAppMessageStatus(activeJob.id, "SENT");
-          await logSentMessage("whatsapp", activeJob.recipientPhone, "LOCAL_WEBVIEW_AUTO");
-          setActiveJob(null);
-        }
-      } else if (data.type === "FAILED") {
-        if (activeJob) {
-          await updateWhatsAppMessageStatus(activeJob.id, "FAILED", data.error || "Unknown error");
-          setActiveJob(null);
-        }
-      }
-    } catch (e) {
-      // Ignore non-JSON
-    }
-  };
-
-  const INJECTED_LOGIN_DETECTOR = `
-    (function() {
-      function detect() {
-        const chatPane = document.querySelector('span[data-icon="chat"]') || 
-                         document.querySelector('#pane-side') || 
-                         document.querySelector('div[data-icon="chat"]');
-        if (chatPane) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOGIN_SUCCESS' }));
-        } else {
-          setTimeout(detect, 1000);
-        }
-      }
-      detect();
-    })();
-  `;
+    timerId = setInterval(processQueue, 5000);
+    return () => clearInterval(timerId);
+  }, [appReady]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -517,39 +330,6 @@ function InnerRootLayout() {
           options={{ headerShown: false }}
         />
       </Stack>
-
-      {/* Global Hidden/Visible WhatsApp WebView */}
-      {store.token && (
-        <View style={store.showWaWeb ? styles.waWebVisible : styles.waWebHidden}>
-          <View style={store.showWaWeb ? [glassStyle, styles.glassCard, { backgroundColor: colors.surface, borderColor: colors.border }] : { width: 1, height: 1 }}>
-            {store.showWaWeb && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-                <View>
-                  <Text style={{ fontSize: 18, fontWeight: "bold", color: colors.text }}>WhatsApp Web Session</Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>Scan QR using Linked Devices on your phone</Text>
-                </View>
-                <View style={{ flex: 1 }} />
-                <Pressable onPress={() => store.setWaWebVisible(false)} style={{ padding: 6 }}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </Pressable>
-              </View>
-            )}
-
-            <RNWebView
-              ref={webViewRef}
-              source={{ uri: "https://web.whatsapp.com" }}
-              userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-              domStorageEnabled={true}
-              javaScriptEnabled={true}
-              originWhitelist={["*"]}
-              injectedJavaScript={INJECTED_LOGIN_DETECTOR}
-              onMessage={handleWebViewMessage}
-              onLoadEnd={handleWebViewLoadEnd}
-              style={store.showWaWeb ? { flex: 1, borderRadius: 16 } : { width: 1, height: 1, opacity: 0 }}
-            />
-          </View>
-        </View>
-      )}
 
       {/* Biometric Lock Overlay */}
       {isBiometricLocked && (

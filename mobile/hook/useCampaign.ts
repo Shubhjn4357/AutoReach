@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Linking from "expo-linking";
-import { getSecureItem } from "../services/store";
+import { getSecureItem, useAppStore } from "../services/store";
 import {
   enqueueWhatsAppMessage,
   updateWhatsAppMessageStatus,
@@ -22,6 +22,7 @@ interface UseCampaignOptions {
 }
 
 export function useCampaign({ showCustomAlert, invalidateAll }: UseCampaignOptions) {
+  const store = useAppStore();
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [bulkTemplateModalVisible, setBulkTemplateModalVisible] = useState(false);
@@ -97,7 +98,8 @@ export function useCampaign({ showCustomAlert, invalidateAll }: UseCampaignOptio
     isAutoSendingRef.current = true;
     setCurrentBulkIndex(0);
 
-    const gatewayUrl = await getSecureItem("whatsapp_gateway_url");
+    const token = await getSecureItem("auth_token");
+    const apiUrl = store.apiUrl;
 
     for (let i = 0; i < selectedLeads.length; i++) {
       if (!isAutoSendingRef.current) break;
@@ -121,24 +123,25 @@ export function useCampaign({ showCustomAlert, invalidateAll }: UseCampaignOptio
       // 1. Enqueue in SQLite whatsapp_outbox as PENDING
       const queueId = await enqueueWhatsAppMessage(currentLead.phone, personalizedMsg, finalImageUri || undefined);
 
-      // Human sender pacing delay (1.5s)
+      // Human pacing delay (1.5s)
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
       if (!isAutoSendingRef.current) break;
 
-      // 2. Dispatch real HTTP POST request to local Gateway URL if linked
-      if (gatewayUrl) {
+      // 2. Dispatch real HTTP POST request to API if authenticated
+      if (token) {
         try {
           await updateWhatsAppMessageStatus(queueId, "PROCESSING");
           const cleanPhone = currentLead.phone.replace(/[^0-9]/g, "");
-          const response = await fetch(`${gatewayUrl}/send`, {
+          const response = await fetch(`${apiUrl}/api/whatsapp/send`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
             },
             body: JSON.stringify({
               phone: cleanPhone,
-              message: personalizedMsg,
+              text: personalizedMsg,
             }),
           });
 
@@ -156,7 +159,7 @@ export function useCampaign({ showCustomAlert, invalidateAll }: UseCampaignOptio
           await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_FAILED");
         }
       } else {
-        await updateWhatsAppMessageStatus(queueId, "FAILED", "Gateway URL not configured");
+        await updateWhatsAppMessageStatus(queueId, "FAILED", "Auth token not found");
       }
 
       setCurrentBulkIndex(i + 1);

@@ -22,6 +22,7 @@ export interface SessionSummary {
   status: SessionStatus;
   phone?: string | null;
   phoneNumber?: string | null;
+  pushName?: string | null;
   qrCode?: string | null;
   updatedAt?: number;
 }
@@ -31,6 +32,7 @@ export interface SessionStats {
   active?: number;
   connected?: number;
   disconnected?: number;
+  memoryUsage?: any;
 }
 
 export interface WebhookSummary {
@@ -57,6 +59,8 @@ export interface ApiKeySummary {
   role: string;
   isActive: boolean | number;
   apiKey?: string;
+  usageCount?: number;
+  expiresAt?: number | null;
 }
 
 export interface AuditLogSummary {

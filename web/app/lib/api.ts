@@ -154,5 +154,17 @@ export const infra = {
     apiFetch<SuccessResponse>("/infra/config", { method: "PUT", body: JSON.stringify(data) }),
 };
 
-export const api = { sessions, webhooks, templates, apiKeys, auditLogs, plugins, whatsapp, infra };
+import { Lead, Task } from "../../../shared/types";
+export type { Lead, Task };
+
+export const crm = {
+  listLeads: () => apiFetch<Lead[]>("/leads"),
+  createLead: (data: Partial<Lead>) => apiFetch<Lead>("/leads", { method: "POST", body: JSON.stringify(data) }),
+  updateLead: (id: string, data: Partial<Lead>) => apiFetch<SuccessResponse>(`/leads/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteLead: (id: string) => apiFetch<SuccessResponse>(`/leads/${id}`, { method: "DELETE" }),
+  listTasks: () => apiFetch<Task[]>("/tasks"),
+  createTask: (data: Partial<Task>) => apiFetch<Task>("/tasks", { method: "POST", body: JSON.stringify(data) }),
+};
+
+export const api = { sessions, webhooks, templates, apiKeys, auditLogs, plugins, whatsapp, infra, crm };
 export default api;

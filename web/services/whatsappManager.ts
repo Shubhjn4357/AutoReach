@@ -274,10 +274,11 @@ export class WhatsAppManager {
         if (connection === "close") {
           const error = lastDisconnect?.error as Boom | undefined;
           const statusCode = error?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          const isQRTimeout = statusCode === 408 && !sock.user;
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isQRTimeout;
 
           console.log(
-            `WhatsApp Session [${sessionId}] closed. Status code: ${statusCode}. Reconnectable: ${shouldReconnect}`
+            `WhatsApp Session [${sessionId}] closed. Status code: ${statusCode}. Reconnectable: ${shouldReconnect} (QR Timeout: ${isQRTimeout})`
           );
 
           this.sockets.delete(sessionId);
@@ -285,10 +286,15 @@ export class WhatsAppManager {
           if (shouldReconnect) {
             this.scheduleReconnect(sessionId);
           } else {
-            console.log(`Session [${sessionId}] logged out permanently.`);
-            await this.updateSessionStatus(sessionId, "DISCONNECTED", null);
-            // Clean up session auth state from database
-            await db.delete(whatsappAuth).where(eq(whatsappAuth.sessionId, sessionId));
+            if (isQRTimeout) {
+              console.log(`Session [${sessionId}] connection timed out (QR not scanned).`);
+              await this.updateSessionStatus(sessionId, "DISCONNECTED", null);
+            } else {
+              console.log(`Session [${sessionId}] logged out permanently.`);
+              await this.updateSessionStatus(sessionId, "DISCONNECTED", null);
+              // Clean up session auth state from database
+              await db.delete(whatsappAuth).where(eq(whatsappAuth.sessionId, sessionId));
+            }
           }
         }
       });

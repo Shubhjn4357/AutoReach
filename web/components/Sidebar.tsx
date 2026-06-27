@@ -1,7 +1,16 @@
 import {
   Sparkles,
   Users,
-  Cpu,
+  LayoutDashboard,
+  Radio,
+  MessageSquare,
+  Activity,
+  FileText,
+  Key,
+  SendHorizonal,
+  Server,
+  ToggleLeft,
+  Terminal,
   Settings,
   Sun,
   Moon,
@@ -11,8 +20,20 @@ import {
 } from "lucide-react";
 
 interface SidebarProps {
-  activeTab: "leads" | "api-status" | "settings";
-  setActiveTab: (tab: "leads" | "api-status" | "settings") => void;
+  activeTab:
+    | "leads"
+    | "dashboard"
+    | "sessions"
+    | "chats"
+    | "webhooks"
+    | "templates"
+    | "api-keys"
+    | "message-tester"
+    | "infrastructure"
+    | "plugins"
+    | "logs"
+    | "settings";
+  setActiveTab: (tab: any) => void;
   leadsCount: number;
   user: any;
   theme: "dark" | "light";
@@ -33,14 +54,29 @@ export default function Sidebar({
   isCollapsed,
   setIsCollapsed,
 }: SidebarProps) {
+  const menuItems = [
+    { id: "leads", label: "Leads & CRM", icon: Users, badge: leadsCount },
+    { id: "dashboard", label: "System Overview", icon: LayoutDashboard },
+    { id: "sessions", label: "Node Manager", icon: Radio },
+    { id: "chats", label: "Conversations", icon: MessageSquare },
+    { id: "webhooks", label: "Webhook Integrator", icon: Activity },
+    { id: "templates", label: "Message Templates", icon: FileText },
+    { id: "api-keys", label: "API Credentials", icon: Key },
+    { id: "message-tester", label: "Message Tester", icon: SendHorizonal },
+    { id: "infrastructure", label: "Diagnostics", icon: Server },
+    { id: "plugins", label: "System Extensions", icon: ToggleLeft },
+    { id: "logs", label: "Audit Logs", icon: Terminal },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
+
   return (
     <aside
       className={`bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col justify-between h-screen sticky top-0 z-30 shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? "w-20" : "w-64"}`}
     >
-      <div>
+      <div className="flex flex-col h-[calc(100vh-120px)] overflow-hidden">
         {/* Logo Brand Panel */}
         <div
-          className={`h-16 border-b border-[var(--color-border)] flex items-center transition-all duration-300 ${isCollapsed ? "justify-center px-4 gap-0" : "px-6 gap-3"}`}
+          className={`h-16 border-b border-[var(--color-border)] flex items-center transition-all duration-300 ${isCollapsed ? "justify-center px-4 gap-0" : "px-6 gap-3"} shrink-0`}
         >
           <div className="bg-[var(--color-primary)] w-8 h-8 rounded-md flex items-center justify-center shadow-md shrink-0">
             <Sparkles size={16} className="text-white" />
@@ -69,63 +105,44 @@ export default function Sidebar({
         </div>
 
         {/* Nav menu links */}
-        <nav className="p-4 flex flex-col gap-1.5">
-          <div
-            onClick={() => setActiveTab("leads")}
-            className={`sidebar-link ${activeTab === "leads" ? "active" : ""} ${isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : ""}`}
-            title={isCollapsed ? `Leads & CRM (${leadsCount})` : undefined}
-          >
-            <div className="relative flex items-center justify-center shrink-0">
-              <Users size={16} />
-              {isCollapsed && leadsCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] border-2 border-[var(--color-surface)]" />
-              )}
-            </div>
-            {!isCollapsed && (
-              <>
-                <span className="flex-1">Leads & CRM</span>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-bold ${activeTab === "leads" ? "bg-white/20 text-white" : "bg-[var(--color-border)] text-[var(--color-text-secondary)]"}`}
-                >
-                  {leadsCount}
-                </span>
-              </>
-            )}
-          </div>
-
-          <div
-            onClick={() => setActiveTab("api-status")}
-            className={`sidebar-link ${activeTab === "api-status" ? "active" : ""} ${isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : ""}`}
-            title={isCollapsed ? "API Integrations" : undefined}
-          >
-            <div className="relative flex items-center justify-center shrink-0">
-              <Cpu size={16} />
-              {isCollapsed && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--color-success)] border-2 border-[var(--color-surface)] animate-pulse" />
-              )}
-            </div>
-            {!isCollapsed && (
-              <>
-                <span className="flex-1">API Integrations</span>
-                <span className="w-2 h-2 rounded-full bg-[var(--color-success)] animate-pulse" />
-              </>
-            )}
-          </div>
-
-          <div
-            onClick={() => setActiveTab("settings")}
-            className={`sidebar-link ${activeTab === "settings" ? "active" : ""} ${isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : ""}`}
-            title={isCollapsed ? "Settings" : undefined}
-          >
-            <Settings size={16} className="shrink-0" />
-            {!isCollapsed && <span>Settings</span>}
-          </div>
+        <nav className="p-4 flex-1 overflow-y-auto space-y-1 scrollbar-thin">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <div
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`sidebar-link ${isActive ? "active" : ""} ${isCollapsed ? "justify-center px-0 h-10 w-10 mx-auto" : ""}`}
+                title={isCollapsed ? item.label : undefined}
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  <Icon size={16} />
+                  {isCollapsed && item.badge && item.badge > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[var(--color-primary)] border border-[var(--color-surface)]" />
+                  )}
+                </div>
+                {!isCollapsed && (
+                  <>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive ? "bg-white/20 text-white" : "bg-[var(--color-border)] text-[var(--color-text-secondary)]"}`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </div>
 
       {/* Footer profile container */}
       <div
-        className={`p-4 border-t border-[var(--color-border)] flex flex-col gap-3 bg-black/10 transition-all duration-300 ${isCollapsed ? "items-center" : ""}`}
+        className={`p-4 border-t border-[var(--color-border)] flex flex-col gap-3 bg-black/10 transition-all duration-300 shrink-0 ${isCollapsed ? "items-center" : ""}`}
       >
         <div className="flex items-center gap-3 w-full justify-center">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-secondary)] flex items-center justify-center font-bold text-sm text-white shadow-md shrink-0">
