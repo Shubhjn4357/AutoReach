@@ -101,11 +101,11 @@ export function useContacts({ showCustomAlert, invalidateAll }: UseContactsOptio
         `Successfully imported ${newLeadsToInsert.length} new contacts from your device!`,
         "success"
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("Contact import error", err);
       showCustomAlert(
         "Import Error",
-        err.message || "Could not fetch device contacts.",
+        err instanceof Error ? err.message : "Could not fetch device contacts.",
         "error"
       );
     }

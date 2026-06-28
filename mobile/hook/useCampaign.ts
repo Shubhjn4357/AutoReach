@@ -153,9 +153,9 @@ export function useCampaign({ showCustomAlert, invalidateAll }: UseCampaignOptio
             await updateWhatsAppMessageStatus(queueId, "FAILED", errText);
             await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_FAILED");
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.warn("Foreground gateway send failed:", err);
-          await updateWhatsAppMessageStatus(queueId, "FAILED", err.message || "Network request failed");
+          await updateWhatsAppMessageStatus(queueId, "FAILED", err instanceof Error ? err.message : "Network request failed");
           await logSentMessage(bulkChannel, currentLead.phone, "LOCAL_GATEWAY_FAILED");
         }
       } else {

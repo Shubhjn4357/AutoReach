@@ -18,10 +18,8 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
-// --- 2. Expo SQLite WebAssembly Support ---
-
-// Add WebAssembly asset support to the resolver
-config.resolver.assetExts.push("wasm");
+// Add WebAssembly and SQL asset support to the resolver
+config.resolver.assetExts.push("wasm", "sql");
 
 // Add COEP and COOP headers to support SharedArrayBuffer on the web
 // (Safely ensure config.server exists first)

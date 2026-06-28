@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api, { ApiKeySummary } from "../../app/lib/api";
-import { Plus, Trash2, Key, RefreshCw, Eye, ShieldAlert, CheckCircle, Copy } from "lucide-react";
+import { Plus, Trash2, CheckCircle, Copy } from "lucide-react";
 
 export default function ApiKeysView() {
   const [keysList, setKeysList] = useState<ApiKeySummary[]>([]);
@@ -10,19 +10,15 @@ export default function ApiKeysView() {
   const [role, setRole] = useState("operator");
   const [expiresInDays, setExpiresInDays] = useState("30");
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const fetchApiKeys = async () => {
     try {
-      setLoading(true);
       const list = await api.apiKeys.list();
       setKeysList(list);
-    } catch (err: any) {
-      setError(err.message || "Failed to load API keys");
-    } finally {
-      setLoading(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load API keys");
     }
   };
 
@@ -47,8 +43,8 @@ export default function ApiKeysView() {
       setName("");
       setSuccess("API Key generated successfully");
       fetchApiKeys();
-    } catch (err: any) {
-      setError(err.message || "Failed to generate API Key");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to generate API Key");
     }
   };
 
@@ -60,8 +56,8 @@ export default function ApiKeysView() {
       await api.apiKeys.revoke(id);
       setSuccess("API key revoked");
       fetchApiKeys();
-    } catch (err: any) {
-      setError(err.message || "Failed to revoke API key");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to revoke API key");
     }
   };
 
@@ -73,8 +69,8 @@ export default function ApiKeysView() {
       await api.apiKeys.delete(id);
       setSuccess("API key deleted permanently");
       fetchApiKeys();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete API key");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete API key");
     }
   };
 

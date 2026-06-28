@@ -33,9 +33,9 @@ interface SidebarProps {
     | "plugins"
     | "logs"
     | "settings";
-  setActiveTab: (tab: any) => void;
+  setActiveTab: (tab: SidebarProps["activeTab"]) => void;
   leadsCount: number;
-  user: any;
+  user: { name?: string } | null;
   theme: "dark" | "light";
   toggleThemeMode: () => void;
   handleLogout: () => void;
@@ -54,7 +54,12 @@ export default function Sidebar({
   isCollapsed,
   setIsCollapsed,
 }: SidebarProps) {
-  const menuItems = [
+  const menuItems: Array<{
+    id: SidebarProps["activeTab"];
+    label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    badge?: number;
+  }> = [
     { id: "leads", label: "Leads & CRM", icon: Users, badge: leadsCount },
     { id: "dashboard", label: "System Overview", icon: LayoutDashboard },
     { id: "sessions", label: "Node Manager", icon: Radio },

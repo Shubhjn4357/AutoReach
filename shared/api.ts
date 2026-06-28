@@ -32,7 +32,7 @@ export interface SessionStats {
   active?: number;
   connected?: number;
   disconnected?: number;
-  memoryUsage?: any;
+  memoryUsage?: { heapUsed: number; heapTotal: number; external?: number; rss?: number };
 }
 
 export interface WebhookSummary {
@@ -90,7 +90,13 @@ export interface PluginSummary {
 
 export interface InfraStatus {
   database?: string;
-  redis?: string;
+  redis?: {
+    connected?: boolean;
+    host?: string;
+    port?: number;
+    mode?: string;
+    enabled?: boolean;
+  } | string;
   whatsapp?: string;
   [key: string]: JsonValue | undefined;
 }

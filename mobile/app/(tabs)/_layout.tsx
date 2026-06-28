@@ -13,6 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticLight } from "../../services/haptics";
 
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const TAB_CONFIG = [
@@ -36,7 +38,7 @@ const TAB_CONFIG = [
   },
 ];
 
-function CustomTabBar({ state, descriptors, navigation }: any) {
+function CustomTabBar({ state, descriptors: _descriptors, navigation }: BottomTabBarProps) {
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
@@ -59,7 +61,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     }).start();
 
     // Scale up active tab
-    state.routes.forEach((_: any, i: number) => {
+    state.routes.forEach((_, i: number) => {
       Animated.spring(scaleAnims[i], {
         toValue: state.index === i ? 1.15 : 1,
         useNativeDriver: true,
@@ -94,7 +96,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           ]}
         />
 
-        {state.routes.map((route: any, index: number) => {
+        {state.routes.map((route, index: number) => {
           const isFocused = state.index === index;
           const tab = TAB_CONFIG.find((t) => t.name === route.name);
 

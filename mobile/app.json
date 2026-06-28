@@ -7,12 +7,6 @@
     "userInterfaceStyle": "dark",
     "scheme": "autoreach",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff",
-      "imageWidth": 642
-    },
     "platforms": [
       "ios",
       "android",
@@ -52,10 +46,19 @@
       "expo-asset",
       "expo-secure-store",
       [
-      "expo-contacts",
-      {
-        "contactsPermission": "Allow $(PRODUCT_NAME) to access your contacts."
-      }
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow $(PRODUCT_NAME) to access your contacts."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "imageWidth": 642
+        }
       ]
     ],
     "extra": {

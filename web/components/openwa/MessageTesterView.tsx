@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import api from "../../app/lib/api";
-import { Send, Image, CheckCircle, RefreshCw, SendHorizonal } from "lucide-react";
+import { RefreshCw, SendHorizonal } from "lucide-react";
 
 export default function MessageTesterView() {
   const [phone, setPhone] = useState("");
@@ -38,8 +38,8 @@ export default function MessageTesterView() {
       } else {
         setError("Message dispatch failed");
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to dispatch test message");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to dispatch test message");
     } finally {
       setLoading(false);
     }

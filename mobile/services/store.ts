@@ -50,7 +50,7 @@ export async function saveSecureItem(key: string, value: string) {
       await SecureStore.setItemAsync(key, value);
       return;
     }
-  } catch (e) {
+  } catch {
     // Ignore and fallback
   }
   fallbackStorage.set(key, value);
@@ -71,7 +71,7 @@ export async function removeSecureItem(key: string) {
       await SecureStore.deleteItemAsync(key);
       return;
     }
-  } catch (e) {
+  } catch {
     // Ignore and fallback
   }
   fallbackStorage.delete(key);
@@ -90,7 +90,7 @@ export async function getSecureItem(key: string) {
     if (isAvailable) {
       return await SecureStore.getItemAsync(key);
     }
-  } catch (e) {
+  } catch {
     // Ignore and fallback
   }
   return fallbackStorage.get(key) || null;
@@ -141,9 +141,18 @@ export const useAppStore = () => {
         console.error("SecureStore write error for user:", err);
       }
     },
-    setApiUrl: (apiUrl: string) => {
-      state = { ...state, apiUrl };
-      notify();
+    setApiUrl: async (apiUrl: string) => {
+      try {
+        if (apiUrl) {
+          await saveSecureItem("api_url", apiUrl);
+        } else {
+          await removeSecureItem("api_url");
+        }
+        state = { ...state, apiUrl };
+        notify();
+      } catch (err) {
+        console.error("SecureStore write error for api_url:", err);
+      }
     },
     setTheme: (theme: AppState["theme"]) => {
       state = { ...state, theme };
@@ -166,7 +175,13 @@ export async function bootstrapStore() {
     const token = await getSecureItem("auth_token");
     const userStr = await getSecureItem("auth_user");
     const user = userStr ? JSON.parse(userStr) : null;
-    state = { ...state, token, user };
+    const persistedApiUrl = await getSecureItem("api_url");
+    state = {
+      ...state,
+      token,
+      user,
+      apiUrl: persistedApiUrl || state.apiUrl,
+    };
     notify();
   } catch (err) {
     console.error("Bootstrapping auth store failed:", err);

@@ -161,7 +161,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     borderColor: isDark ? "rgba(150,140,255,0.2)" : "rgba(100,100,200,0.15)",
     borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 4,
     color: colors.text,
     fontSize: 15,
     shadowColor: colors.clayShadowDark,

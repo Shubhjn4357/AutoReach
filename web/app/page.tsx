@@ -16,7 +16,7 @@ import PluginsView from "../components/openwa/PluginsView";
 import LogsView from "../components/openwa/LogsView";
 import { AddLeadModal, EditLeadModal } from "../components/Modals";
 
-import api, { Lead, Task } from "./lib/api";
+import api, { Lead, LeadStatus } from "./lib/api";
 import { LogIn } from "lucide-react";
 
 export default function RootPage() {
@@ -25,19 +25,29 @@ export default function RootPage() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  const [activeTab, setActiveTab] = useState<any>("leads");
+  const [activeTab, setActiveTab] = useState<
+    | "leads"
+    | "dashboard"
+    | "sessions"
+    | "chats"
+    | "webhooks"
+    | "templates"
+    | "api-keys"
+    | "message-tester"
+    | "infrastructure"
+    | "plugins"
+    | "logs"
+    | "settings"
+  >("leads");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loadingLeads, setLoadingLeads] = useState(false);
 
   // CRM Search, filters, modals
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<any>("ALL");
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "ALL">("ALL");
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [editModalLead, setEditModalLead] = useState<Lead | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Add lead form state
@@ -46,7 +56,7 @@ export default function RootPage() {
     email: "",
     phone: "",
     value: "",
-    status: "NEW" as any,
+    status: "NEW" as Lead["status"],
     notes: "",
   });
 
@@ -57,13 +67,13 @@ export default function RootPage() {
     email: "",
     phone: "",
     value: "",
-    status: "NEW" as any,
+    status: "NEW" as Lead["status"],
     notes: "",
   });
 
   // AI & Message Dispatch States
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiResult, setAiResult] = useState<{ score?: number; risk?: string; suggestion?: string; grade?: string; summary?: string; suggestedAction?: string; proposedQuickReply?: string } | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
 
@@ -108,15 +118,10 @@ export default function RootPage() {
 
   const fetchLeadsAndTasks = async () => {
     try {
-      setLoadingLeads(true);
       const leadsRes = await api.crm.listLeads();
       setLeads(leadsRes);
-      const tasksRes = await api.crm.listTasks();
-      setTasks(tasksRes);
     } catch (err) {
       console.error("Failed to load CRM data:", err);
-    } finally {
-      setLoadingLeads(false);
     }
   };
 
@@ -161,7 +166,7 @@ export default function RootPage() {
       setAddModalOpen(false);
       setAddForm({ name: "", email: "", phone: "", value: "", status: "NEW", notes: "" });
       fetchLeadsAndTasks();
-    } catch (err) {
+    } catch {
       alert("Failed to add lead");
     }
   };
@@ -179,7 +184,7 @@ export default function RootPage() {
       });
       setEditModalOpen(false);
       fetchLeadsAndTasks();
-    } catch (err) {
+    } catch {
       alert("Failed to update lead");
     }
   };
@@ -189,7 +194,7 @@ export default function RootPage() {
     try {
       await api.crm.deleteLead(id);
       fetchLeadsAndTasks();
-    } catch (err) {
+    } catch {
       alert("Failed to delete lead");
     }
   };
@@ -202,6 +207,10 @@ export default function RootPage() {
         score: 85,
         risk: "Low",
         suggestion: `Lead "${lead.name}" exhibits strong buying signals. Recommend active follow-up using the "lead-followup" template.`,
+        grade: "A",
+        summary: `Lead "${lead.name}" exhibits strong buying signals.`,
+        suggestedAction: "Recommend active follow-up using the 'lead-followup' template.",
+        proposedQuickReply: `Hello ${lead.name}, let's schedule a brief follow-up!`,
       });
       setAiLoading(false);
     }, 1500);
@@ -219,8 +228,8 @@ export default function RootPage() {
       const cleanPhone = lead.phone.replace(/\D/g, "");
       await api.whatsapp.send(cleanPhone, text);
       alert("WhatsApp message dispatched successfully!");
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setDispatchLoading(false);
     }
@@ -269,7 +278,6 @@ export default function RootPage() {
             handleUpdateProfile={handleUpdateProfile}
             theme={theme}
             toggleThemeMode={toggleThemeMode}
-            authToken={typeof window !== "undefined" ? window.sessionStorage.getItem("autoreach_api_key") : null}
           />
         );
       case "leads":
@@ -308,7 +316,7 @@ export default function RootPage() {
                 email: lead.email || "",
                 phone: lead.phone || "",
                 value: String(lead.value || ""),
-                status: lead.status as any,
+                status: lead.status as Lead["status"],
                 notes: lead.notes || "",
               });
               setEditModalOpen(true);

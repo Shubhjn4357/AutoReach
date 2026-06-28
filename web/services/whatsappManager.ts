@@ -50,7 +50,7 @@ export async function useDrizzleAuthState(sessionId: string): Promise<{ state: A
       creds,
       keys: {
         get: async <T extends keyof SignalDataTypeMap>(type: T, ids: string[]) => {
-          const data: { [id: string]: any } = {};
+          const data: { [id: string]: SignalDataTypeMap[T] } = {};
           if (ids.length === 0) return data as { [id: string]: SignalDataTypeMap[T] };
 
           const rows = await db
@@ -237,6 +237,18 @@ export class WhatsAppManager {
           try {
             const qrDataUrl = await qrcode.toDataURL(qr);
             await this.updateSessionStatus(sessionId, "QR_READY", qrDataUrl);
+
+            // Print ASCII QR code in terminal for easy local scanning/pairing
+            console.log("\n==================================================");
+            console.log(`> WhatsApp Pairing QR Code for Session: ${sessionId}`);
+            console.log("==================================================");
+            try {
+              const qrTerminalText = await qrcode.toString(qr, { type: "terminal", small: true });
+              console.log(qrTerminalText);
+            } catch {
+              console.log(`[QR Code String]: ${qr}`);
+            }
+            console.log("==================================================\n");
           } catch (err) {
             console.error(`Failed to render QR Code for ${sessionId}:`, err);
           }
@@ -339,7 +351,7 @@ export class WhatsAppManager {
     if (sock) {
       try {
         await sock.logout();
-      } catch (err) {
+      } catch {
         sock.end(undefined);
       }
       this.sockets.delete(sessionId);
@@ -415,7 +427,7 @@ export class WhatsAppManager {
   /**
    * Helper to dispatch session status and message events to webhooks
    */
-  private async triggerWebhooks(sessionId: string, eventType: string, data: any) {
+  private async triggerWebhooks(sessionId: string, eventType: string, data: unknown) {
     try {
       const activeWebhooks = await db.select().from(webhooks).where(eq(webhooks.sessionId, sessionId));
       for (const w of activeWebhooks) {

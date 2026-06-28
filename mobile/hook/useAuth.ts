@@ -74,11 +74,11 @@ export function useAuth({ showCustomAlert }: UseAuthOptions) {
         throw new Error("No ID Token returned from Google Sign-In");
       }
       await handleGoogleLogin(idToken);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.warn("Google native login error", error);
       showCustomAlert(
         "Native Google Sign-In Failed",
-        error.message || "Failed to authenticate",
+        error instanceof Error ? error.message : "Failed to authenticate",
         "error"
       );
     } finally {

@@ -15,6 +15,13 @@
       "when": 1782129606763,
       "tag": "0001_stiff_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782647759367,
+      "tag": "0002_flat_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

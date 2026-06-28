@@ -1,7 +1,6 @@
 // Standalone WhatsApp service — calls AutoReach Next.js API routes, no OpenWA dependency
 import { getErrorMessage } from "./api";
 
-const API_BASE = ""; // Same-origin, so we use relative paths
 
 export interface WhatsAppMessageResult {
   success: boolean;

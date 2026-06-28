@@ -1,7 +1,20 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
 // Re-export shared tables to use unified schema
-export { users, leads, tasks, driveFiles, syncQueue } from "../../shared/db";
+export {
+  users,
+  leads,
+  tasks,
+  driveFiles,
+  syncQueue,
+  contacts,
+  groups,
+  groupParticipants,
+  messages,
+  settings,
+  campaigns,
+  campaignRecipients,
+} from "../../shared/db";
 
 export const sentMessagesLog = sqliteTable("sent_messages_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),

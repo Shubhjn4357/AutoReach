@@ -43,18 +43,7 @@ interface AiAuditResult {
   proposedQuickReply?: string;
 }
 
-interface RawSqlLead {
-  id: string;
-  user_id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  status: string;
-  value: number;
-  notes: string | null;
-  created_at: number;
-  updated_at: number;
-}
+
 
 import { useThrottle } from "../../hook/useThrottle";
 
@@ -168,7 +157,7 @@ function ContactDetailScreenContent() {
       await queryClient.invalidateQueries({ queryKey: ["lead", id] });
       await queryClient.invalidateQueries({ queryKey: ["leads"] });
       showCustomAlert("Success", "Contact details updated.", "success");
-    } catch (err) {
+    } catch {
       showCustomAlert("Error", "Could not save details", "error");
     }
   };
@@ -196,7 +185,7 @@ function ContactDetailScreenContent() {
                 "success",
                 [{ text: "OK", onPress: () => router.replace("/(tabs)") }],
               );
-            } catch (e) {
+            } catch {
               showCustomAlert("Error", "Failed to delete contact.", "error");
             }
           },
@@ -272,10 +261,10 @@ function ContactDetailScreenContent() {
           "error",
         );
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       showCustomAlert(
         "Linking Failed",
-        e.message || "An error occurred",
+        e instanceof Error ? e.message : "An error occurred",
         "error",
       );
     } finally {

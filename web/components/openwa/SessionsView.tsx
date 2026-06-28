@@ -18,8 +18,8 @@ export default function SessionsView() {
       setLoading(true);
       const list = await api.sessions.list();
       setSessions(list);
-    } catch (err: any) {
-      setError(err.message || "Failed to load sessions");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load sessions");
     } finally {
       setLoading(false);
     }
@@ -41,8 +41,8 @@ export default function SessionsView() {
       await api.sessions.create(newSessionName.trim());
       setNewSessionName("");
       fetchSessions();
-    } catch (err: any) {
-      setError(err.message || "Failed to create session");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create session");
     }
   };
 
@@ -51,8 +51,8 @@ export default function SessionsView() {
       setError(null);
       await api.sessions.start(id);
       fetchSessions();
-    } catch (err: any) {
-      setError(err.message || "Failed to start session");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to start session");
     }
   };
 
@@ -61,8 +61,8 @@ export default function SessionsView() {
       setError(null);
       await api.sessions.stop(id);
       fetchSessions();
-    } catch (err: any) {
-      setError(err.message || "Failed to stop session");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to stop session");
     }
   };
 
@@ -72,8 +72,8 @@ export default function SessionsView() {
       setError(null);
       await api.sessions.delete(id);
       fetchSessions();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete session");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete session");
     }
   };
 

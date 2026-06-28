@@ -11,7 +11,7 @@ import {
   Platform,
   RefreshControl,
   KeyboardAvoidingView,
-  Switch,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -21,36 +21,24 @@ import {
   createLocalTemplate,
   deleteLocalTemplate,
   getSentMessageStats,
-  logSentMessage,
   MessageTemplate,
   MessageStats,
-  enqueueWhatsAppMessage,
+  createLocalCampaign,
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { Ionicons } from "@expo/vector-icons";
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
-import { FilterPillRow } from "../../components/FilterPillRow";
-import { PillButton } from "../../components/PillButton";
 import { Button } from "../../components/Button";
 import { IconButton } from "../../components/IconButton";
-import * as Linking from "expo-linking";
-import * as Notifications from "expo-notifications";
-import * as TaskManager from "expo-task-manager";
-import * as BackgroundTask from "expo-background-task";
-import { getSecureItem, saveSecureItem, useAppStore } from "../../services/store";
 import { APP_CONSTANTS } from "../../constant";
 import DateTimePicker from "@expo/ui/community/datetime-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import {
   hapticLight,
-  hapticMedium,
-  hapticHeavy,
   hapticSuccess,
   hapticWarning,
 } from "../../services/haptics";
-
-const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND_NOTIFICATION_TASK";
 
 import { Suspense } from "react";
 
@@ -86,7 +74,6 @@ export default function CampaignsScreen() {
 
 function CampaignsScreenContent() {
   const { colors, glassStyle, glassInputStyle } = useTheme();
-  const store = useAppStore();
   const queryClient = useQueryClient();
 
 
@@ -116,7 +103,6 @@ function CampaignsScreenContent() {
 
   // Campaign Image Picker State
   const [campaignImageUri, setCampaignImageUri] = useState<string | null>(null);
-  const [waLocalLinked, setWaLocalLinked] = useState(false);
 
   const handlePickCampaignImage = async () => {
     hapticLight();
@@ -136,15 +122,16 @@ function CampaignsScreenContent() {
   const [newTemplateTitle, setNewTemplateTitle] = useState("");
   const [newTemplateBody, setNewTemplateBody] = useState("");
   const [templateBodySelection, setTemplateBodySelection] = useState({ start: 0, end: 0 });
-  const templateBodyRef = useRef<any>(null);
+  const templateBodyRef = useRef<TextInput>(null);
 
-  // Reminder Configuration State
-  const [reminderEnabled, setReminderEnabled] = useState(false);
-  const [reminderTime, setReminderTime] = useState<Date>(() => {
+  // Campaign Scheduling State
+  const [newCampaignName, setNewCampaignName] = useState("");
+  const [scheduledDateTime, setScheduledDateTime] = useState<Date>(() => {
     const d = new Date();
-    d.setHours(9, 0, 0, 0);
+    d.setMinutes(d.getMinutes() + 15);
     return d;
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Reusable custom alert configuration
@@ -178,26 +165,7 @@ function CampaignsScreenContent() {
 
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadData = async () => {
-    try {
-      // Load reminder configuration
-      const enabled = await getSecureItem("reminder_enabled");
-      const timeStr = await getSecureItem("reminder_time");
-      setReminderEnabled(enabled === "true");
-      if (timeStr) {
-        const [h, m] = timeStr.split(":").map(Number);
-        const d = new Date();
-        d.setHours(h || 9, m || 0, 0, 0);
-        setReminderTime(d);
-      }
-
-      // Load local WhatsApp link status
-      const isLinked = await getSecureItem("whatsapp_linked_locally");
-      setWaLocalLinked(isLinked === "true");
-    } catch (e) {
-      console.warn("Failed to load campaigns workspace", e);
-    }
-  };
+  const loadData = async () => {};
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -220,12 +188,7 @@ function CampaignsScreenContent() {
     }
   }, [templates, selectedTemplateId]);
 
-  useEffect(() => {
-    (async () => {
-      const isLinked = await getSecureItem("whatsapp_linked_locally");
-      setWaLocalLinked(isLinked === "true");
-    })();
-  }, [store.showWaWeb]);
+
 
   // Prepopulate default templates if none exist
   useEffect(() => {
@@ -304,11 +267,15 @@ function CampaignsScreenContent() {
   const targetLeads =
     targetStage === "ALL"
       ? leads
-      : leads.filter((l) => l.status === targetStage);
+      : leads.filter((l: Lead) => l.status === targetStage);
 
   const activeTemplate = templates.find((t) => t.id === selectedTemplateId);
 
-  const executeBulkCampaign = async () => {
+  const handleScheduleCampaign = async () => {
+    if (!newCampaignName.trim()) {
+      showCustomAlert("Error", "Please enter a campaign name.", "error");
+      return;
+    }
     if (!selectedTemplateId || !activeTemplate) {
       showCustomAlert("Error", "Please select a message template", "error");
       return;
@@ -322,166 +289,39 @@ function CampaignsScreenContent() {
       return;
     }
 
-    const campaignImg = campaignImageUri;
+    setCampaignLoading(true);
+    try {
+      const campaignId = `camp_${Math.random().toString(36).substring(2, 9)}`;
+      
+      const newCampaign = {
+        id: campaignId,
+        name: newCampaignName.trim(),
+        messageTemplateId: selectedTemplateId,
+        status: "scheduled",
+        mediaUrl: campaignImageUri || null,
+        scheduledAt: scheduledDateTime.getTime(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
 
-    showCustomAlert(
-      "Confirm Campaign",
-      `Send "${activeTemplate.title}" to ${targetLeads.length} recipients via ${campaignChannel.toUpperCase()}?`,
-      "info",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Start Campaign",
-          onPress: async () => {
-            setCampaignLoading(true);
-            try {
-              let sentCount = 0;
-              let enqueuedCount = 0;
-              for (const lead of targetLeads) {
-                if (!lead.phone) continue;
+      const recipientIds = targetLeads.map((l) => l.id);
 
-                const personalizedMsg = activeTemplate.body
-                  .replace(/\[Name\]/gi, lead.name)
-                  .replace(/\[Value\]/gi, "");
+      await createLocalCampaign(newCampaign, recipientIds);
 
-                if (campaignChannel === "whatsapp") {
-                  await enqueueWhatsAppMessage(lead.phone, personalizedMsg, campaignImg || undefined);
-                  enqueuedCount++;
-                } else {
-                  const encodedText = encodeURIComponent(personalizedMsg);
-                  const separator = Platform.OS === "ios" ? "&" : "?";
-                  const url = `sms:${lead.phone}${separator}body=${encodedText}`;
-
-                  try {
-                    const canOpen = await Linking.canOpenURL(url);
-                    if (canOpen) {
-                      await Linking.openURL(url);
-                      await logSentMessage(
-                        "sms",
-                        lead.phone,
-                        "CAMPAIGN_DIRECT",
-                      );
-                      sentCount++;
-                    }
-                  } catch (err) {
-                    console.warn("Failed to open linking URL", err);
-                  }
-                }
-              }
-
-              setCampaignImageUri(null); // Clear selected image
-              await loadData();
-              
-              if (campaignChannel === "whatsapp") {
-                showCustomAlert(
-                  "Campaign Dispatched",
-                  `Enqueued ${enqueuedCount} messages in local outbox queue for background dispatch.`,
-                  "success"
-                );
-              } else {
-                showCustomAlert(
-                  "Campaign Completed",
-                  `Launched ${sentCount} custom message redirects. Logged stats.`,
-                  "success",
-                );
-              }
-            } catch (err) {
-              showCustomAlert("Error", "Failed to run campaign.", "error");
-            } finally {
-              setCampaignLoading(false);
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  // Configure Daily Notifications Reminders
-  const handleToggleReminder = async (enabled: boolean) => {
-    hapticMedium();
-    setReminderEnabled(enabled);
-    await saveSecureItem("reminder_enabled", enabled ? "true" : "false");
-
-    if (enabled) {
-      const hour = reminderTime.getHours();
-      const minute = reminderTime.getMinutes();
-      const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-
-      // Cancel previous alerts
-      await Notifications.cancelAllScheduledNotificationsAsync();
-
-      try {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "AutoReach Reminder",
-            body: "Time to check your deal funnel pipelines and follow up with hot leads!",
-            sound: true,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DAILY,
-            hour,
-            minute,
-          },
-        });
-
-        // Register/Confirm background task
-        try {
-          const isRegistered = await TaskManager.isTaskRegisteredAsync(
-            BACKGROUND_NOTIFICATION_TASK,
-          );
-          if (!isRegistered) {
-            await BackgroundTask.registerTaskAsync(
-              BACKGROUND_NOTIFICATION_TASK,
-              {
-                minimumInterval: 15 * 60,
-              },
-            );
-          }
-        } catch (errTask) {
-          console.warn("BG task fail", errTask);
-        }
-
-        showCustomAlert(
-          "Reminders Enabled",
-          `Scheduled daily follow-up notifications at ${timeStr}.`,
-          "success",
-        );
-      } catch (e) {
-        showCustomAlert("Error", "Could not schedule reminders", "error");
-        setReminderEnabled(false);
-        await saveSecureItem("reminder_enabled", "false");
-      }
-    } else {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-      try {
-        const isRegistered = await TaskManager.isTaskRegisteredAsync(
-          BACKGROUND_NOTIFICATION_TASK,
-        );
-        if (isRegistered) {
-          await BackgroundTask.unregisterTaskAsync(
-            BACKGROUND_NOTIFICATION_TASK,
-          );
-        }
-      } catch (errUnreg) {
-        console.warn("BG task unreg fail", errUnreg);
-      }
+      hapticSuccess();
       showCustomAlert(
-        "Reminders Disabled",
-        "Cancelled all repeating alerts.",
-        "info",
+        "Campaign Scheduled",
+        `Campaign "${newCampaignName}" scheduled successfully for ${scheduledDateTime.toLocaleString()} (${targetLeads.length} recipients)!`,
+        "success",
       );
-    }
-  };
-
-  const handleTimeChange = async (date: Date) => {
-    setReminderTime(date);
-    const h = date.getHours();
-    const m = date.getMinutes();
-    const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    await saveSecureItem("reminder_time", timeStr);
-    // Re-schedule if already enabled
-    if (reminderEnabled) {
-      await handleToggleReminder(true);
+      
+      setNewCampaignName("");
+      setCampaignImageUri(null);
+    } catch (err) {
+      console.warn("Failed to schedule campaign", err);
+      showCustomAlert("Error", "Failed to schedule campaign.", "error");
+    } finally {
+      setCampaignLoading(false);
     }
   };
 
@@ -582,7 +422,7 @@ function CampaignsScreenContent() {
             </View>
 
             <ScrollView style={styles.templatesList} nestedScrollEnabled>
-              {templates.map((template) => (
+              {templates.map((template: MessageTemplate) => (
                 <View
                   key={template.id}
                   style={[
@@ -621,7 +461,7 @@ function CampaignsScreenContent() {
           </View>
 
 
-          {/* Daily Reminders Scheduler Panel */}
+          {/* Campaign Scheduler Form */}
           <View
             style={[
               glassStyle,
@@ -629,71 +469,321 @@ function CampaignsScreenContent() {
               { backgroundColor: colors.surface },
             ]}
           >
-            <View style={styles.reminderHeaderRow}>
-              <View>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  Daily Reminders
-                </Text>
-                <Text
-                  style={[
-                    styles.reminderSubtitle,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Send follow-up alerts to yourself
-                </Text>
-              </View>
-              <View style={{ flex: 1 }} />
-              <Switch
-                value={reminderEnabled}
-                onValueChange={handleToggleReminder}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Schedule Message Campaign
+            </Text>
+            <Text
+              style={[
+                styles.reminderSubtitle,
+                { color: colors.textSecondary, marginBottom: 16 },
+              ]}
+            >
+              Compose and queue a campaign for CRM leads.
+            </Text>
+
+            {/* Campaign Name Input */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+                Campaign Name
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    color: colors.text,
+                    marginTop: 6,
+                    marginBottom: 12,
+                  },
+                ]}
+                placeholder="e.g. July Promotion Campaign"
+                placeholderTextColor={colors.textSecondary + "90"}
+                value={newCampaignName}
+                onChangeText={setNewCampaignName}
               />
             </View>
 
-            {/* Native Time Picker */}
-            <View style={styles.timePickerContainer}>
-              <Pressable
-                onPress={() => { hapticLight(); setShowTimePicker(prev => !prev); }}
-                style={[
-                  styles.timeDisplayBtn,
-                  {
-                    backgroundColor: colors.primarySoft,
-                    borderColor: colors.primary + "40",
-                  }
-                ]}
-              >
-                <Ionicons name="time-outline" size={18} color={colors.primary} />
-                <Text style={[styles.timeDisplayText, { color: colors.primary }]}>
-                  {String(reminderTime.getHours()).padStart(2, "0")}:{String(reminderTime.getMinutes()).padStart(2, "0")}
+            {/* Target Stage Select */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                Target CRM Stage
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginBottom: 12 }}>
+                {["ALL", "NEW", "CONTACTED", "QUALIFIED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"].map((stage) => {
+                  const isSelected = targetStage === stage;
+                  return (
+                    <Pressable
+                      key={stage}
+                      onPress={() => { hapticLight(); setTargetStage(stage as LeadStatus | "ALL"); }}
+                      style={[
+                        styles.stagePill,
+                        {
+                          backgroundColor: isSelected ? colors.primary : colors.bg,
+                          borderColor: isSelected ? colors.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.stagePillText,
+                          { color: isSelected ? "#fff" : colors.textSecondary },
+                        ]}
+                      >
+                        {stage}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Message Template Selection */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                Select Message Template
+              </Text>
+              {templates.length === 0 ? (
+                <Text style={{ color: colors.textSecondary, fontSize: 13, fontStyle: "italic", marginBottom: 12 }}>
+                  No templates registered. Please add a template first.
                 </Text>
-              </Pressable>
-              
-              {showTimePicker && (
-                <View style={{ flex: 1 }}>
-                  <DateTimePicker
-                    value={reminderTime}
-                    mode="time"
-                    onChange={(event: any, date?: Date) => {
-                      setShowTimePicker(Platform.OS === "ios");
-                      if (date) handleTimeChange(date);
-                    }}
-                    display="spinner"
-                  />
-                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginBottom: 12 }}>
+                  {templates.map((template: MessageTemplate) => {
+                    const isSelected = selectedTemplateId === template.id;
+                    return (
+                      <Pressable
+                        key={template.id}
+                        onPress={() => { hapticLight(); setSelectedTemplateId(template.id); }}
+                        style={[
+                          styles.templatePill,
+                          {
+                            backgroundColor: isSelected ? colors.primarySoft : colors.bg,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.templatePillText,
+                            { color: isSelected ? colors.primary : colors.textSecondary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {template.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
               )}
             </View>
 
-            {reminderEnabled && (
-              <View style={[
-                styles.reminderActiveBadge,
-                { backgroundColor: colors.successSoft, borderColor: colors.success + "40" }
-              ]}>
-                <Ionicons name="notifications" size={14} color={colors.success} />
-                <Text style={{ fontSize: 12, color: colors.success, fontWeight: "600", marginLeft: 6 }}>
-                  Active · Daily at {String(reminderTime.getHours()).padStart(2, "0")}:{String(reminderTime.getMinutes()).padStart(2, "0")}
-                </Text>
+            {/* Scheduled Date & Time Pickers */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                Scheduled Date & Time
+              </Text>
+              <View style={[styles.dateTimeRow, { marginBottom: 12 }]}>
+                <Pressable
+                  onPress={() => { hapticLight(); setShowDatePicker(true); }}
+                  style={[
+                    styles.dateTimeButton,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.dateTimeButtonText, { color: colors.text }]}>
+                    {scheduledDateTime.toLocaleDateString()}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => { hapticLight(); setShowTimePicker(true); }}
+                  style={[
+                    styles.dateTimeButton,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.dateTimeButtonText, { color: colors.text }]}>
+                    {String(scheduledDateTime.getHours()).padStart(2, "0")}:{String(scheduledDateTime.getMinutes()).padStart(2, "0")}
+                  </Text>
+                </Pressable>
               </View>
-            )}
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={scheduledDateTime}
+                  mode="date"
+                  onChange={(_event: unknown, date?: Date) => {
+                    setShowDatePicker(Platform.OS === "ios");
+                    if (date) {
+                      const newDate = new Date(scheduledDateTime);
+                      newDate.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+                      setScheduledDateTime(newDate);
+                    }
+                  }}
+                />
+              )}
+
+              {showTimePicker && (
+                <DateTimePicker
+                  value={scheduledDateTime}
+                  mode="time"
+                  onChange={(_event: unknown, date?: Date) => {
+                    setShowTimePicker(Platform.OS === "ios");
+                    if (date) {
+                      const newDate = new Date(scheduledDateTime);
+                      newDate.setHours(date.getHours(), date.getMinutes(), 0, 0);
+                      setScheduledDateTime(newDate);
+                    }
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Campaign Channel Selection */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                Campaign Channel
+              </Text>
+              <View style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}>
+                {(["whatsapp", "sms"] as const).map((channel) => {
+                  const isSelected = campaignChannel === channel;
+                  return (
+                    <Pressable
+                      key={channel}
+                      onPress={() => { hapticLight(); setCampaignChannel(channel); }}
+                      style={[
+                        styles.channelSelectBtn,
+                        {
+                          backgroundColor: isSelected ? colors.primarySoft : colors.bg,
+                          borderColor: isSelected ? colors.primary : colors.border,
+                          flex: 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={channel === "whatsapp" ? "logo-whatsapp" : "chatbubble-outline"}
+                        size={16}
+                        color={isSelected ? colors.primary : colors.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.channelSelectBtnText,
+                          { color: isSelected ? colors.primary : colors.textSecondary },
+                        ]}
+                      >
+                        {channel === "whatsapp" ? "WhatsApp" : "SMS App"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Drag & Drop styled Image Poster Dropzone */}
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                Image Poster Attachment (Optional)
+              </Text>
+              {campaignImageUri ? (
+                <View
+                  style={[
+                    styles.imagePreviewContainer,
+                    { backgroundColor: colors.bg, borderColor: colors.border, marginBottom: 12 },
+                  ]}
+                >
+                  <Image
+                    source={{ uri: campaignImageUri }}
+                    style={styles.imagePreview}
+                  />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>
+                      Attached Image Poster
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 2 }}>
+                      Will be dispatched with template body.
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => { hapticLight(); setCampaignImageUri(null); }}
+                    style={{ padding: 4 }}
+                  >
+                    <Ionicons name="close-circle" size={22} color={colors.danger} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={handlePickCampaignImage}
+                  style={[
+                    styles.dropzoneContainer,
+                    { backgroundColor: colors.bg, borderColor: colors.border, marginBottom: 12 },
+                  ]}
+                >
+                  <Ionicons name="cloud-upload-outline" size={28} color={colors.textSecondary} />
+                  <Text style={[styles.dropzoneText, { color: colors.text }]}>
+                    Select Poster Image
+                  </Text>
+                  <Text style={[styles.dropzoneSubtext, { color: colors.textSecondary }]}>
+                    Supports JPG, PNG (automatically converted)
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* Recipients Counter Badge */}
+            <View
+              style={[
+                styles.recipientsBadge,
+                {
+                  backgroundColor: targetLeads.length > 0 ? colors.successSoft : colors.dangerSoft,
+                  borderColor: targetLeads.length > 0 ? colors.success + "30" : colors.danger + "30",
+                  marginBottom: 12,
+                },
+              ]}
+            >
+              <Ionicons
+                name={targetLeads.length > 0 ? "checkmark-circle" : "alert-circle"}
+                size={16}
+                color={targetLeads.length > 0 ? colors.success : colors.danger}
+              />
+              <Text
+                style={{
+                  color: targetLeads.length > 0 ? colors.success : colors.danger,
+                  fontSize: 12,
+                  fontWeight: "600",
+                  marginLeft: 8,
+                }}
+              >
+                {targetLeads.length > 0
+                  ? `Target Stage matches ${targetLeads.length} leads`
+                  : "No CRM leads match selected stage"}
+              </Text>
+            </View>
+
+            {/* Schedule Button */}
+            <Pressable
+              disabled={campaignLoading}
+              onPress={handleScheduleCampaign}
+              style={[
+                styles.scheduleBtn,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: campaignLoading ? 0.6 : 1,
+                },
+              ]}
+            >
+              {campaignLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="calendar" size={18} color="#fff" />
+                  <Text style={styles.scheduleBtnText}>Schedule Campaign</Text>
+                </>
+              )}
+            </Pressable>
           </View>
         </ScrollView>
 
@@ -1126,12 +1216,124 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: -0.5,
   },
-  reminderActiveBadge: {
+  inputContainer: {
+    width: "100%",
+  },
+  textInput: {
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  stagePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+    height: 32,
+    justifyContent: "center",
+  },
+  stagePillText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  templatePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+    height: 32,
+    justifyContent: "center",
+    maxWidth: 150,
+  },
+  templatePillText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  dateTimeButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 12,
+    gap: 8,
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
     borderWidth: 1,
+    justifyContent: "center",
+  },
+  dateTimeButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  channelSelectBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: "center",
+  },
+  channelSelectBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  dropzoneContainer: {
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dropzoneText: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 6,
+  },
+  dropzoneSubtext: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+  imagePreviewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  imagePreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+  },
+  recipientsBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    width: "100%",
+  },
+  scheduleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 46,
+    borderRadius: 12,
+    width: "100%",
+  },
+  scheduleBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

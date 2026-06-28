@@ -17,8 +17,8 @@ import { redisService } from "./services/redisService";
 
 // Database entities
 import { db } from "../shared/dbClient";
-import { contacts, groups, groupParticipants, messages, campaigns, campaignRecipients, settings, auditLogs } from "../shared/db";
-import { eq, desc } from "drizzle-orm";
+import { contacts, groups, groupParticipants, messages, campaigns, campaignRecipients, settings, auditLogs, messageTemplates } from "../shared/db";
+import { eq, desc, and, lte } from "drizzle-orm";
 
 interface AuthenticatedRequest extends Request {
   user?: JWTPayload;
@@ -47,6 +47,126 @@ app.prepare().then(async () => {
 
   // Seed default developer key
   await apiKeyService.seedDefaultKey();
+
+  // Background Campaign Scheduler Loop
+  setInterval(async () => {
+    try {
+      const now = Date.now();
+      // Find campaigns that are scheduled and due
+      const pendingCampaigns = await db
+        .select()
+        .from(campaigns)
+        .where(
+          and(
+            eq(campaigns.status, "scheduled"),
+            lte(campaigns.scheduledAt, now)
+          )
+        );
+
+      for (const campaign of pendingCampaigns) {
+        console.log(`[Campaign Scheduler] Starting campaign: ${campaign.name} (${campaign.id})`);
+        
+        // Update status to processing
+        await db
+          .update(campaigns)
+          .set({ status: "processing", startedAt: Date.now(), updatedAt: Date.now() })
+          .where(eq(campaigns.id, campaign.id));
+
+        // Get template
+        if (!campaign.messageTemplateId) {
+          console.warn(`[Campaign Scheduler] No template ID for campaign ${campaign.id}`);
+          await db
+            .update(campaigns)
+            .set({ status: "failed", finishedAt: Date.now(), updatedAt: Date.now() })
+            .where(eq(campaigns.id, campaign.id));
+          continue;
+        }
+
+        const templateList = await db
+          .select()
+          .from(messageTemplates)
+          .where(eq(messageTemplates.id, campaign.messageTemplateId));
+        const template = templateList[0];
+
+        if (!template) {
+          console.warn(`[Campaign Scheduler] Template not found for campaign ${campaign.id}`);
+          await db
+            .update(campaigns)
+            .set({ status: "failed", finishedAt: Date.now(), updatedAt: Date.now() })
+            .where(eq(campaigns.id, campaign.id));
+          continue;
+        }
+
+        // Get recipients
+        const recipients = await db
+          .select()
+          .from(campaignRecipients)
+          .where(eq(campaignRecipients.campaignId, campaign.id));
+
+        console.log(`[Campaign Scheduler] Dispatching to ${recipients.length} recipients`);
+        
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const recipient of recipients) {
+          // Get contact info
+          const contactList = await db
+            .select()
+            .from(contacts)
+            .where(eq(contacts.id, recipient.contactId));
+          const contact = contactList[0];
+
+          if (!contact || !contact.phone) {
+            await db
+              .update(campaignRecipients)
+              .set({ status: "failed", attemptedAt: Date.now() })
+              .where(eq(campaignRecipients.id, recipient.id));
+            failCount++;
+            continue;
+          }
+
+          try {
+            // Replace [Name] and other tags
+            const nameToReplace = contact.name || "Customer";
+            const personalizedMsg = template.body
+              .replace(/\[Name\]/gi, nameToReplace)
+              .replace(/\[Phone\]/gi, contact.phone)
+              .replace(/\[Email\]/gi, contact.pushName || "");
+
+            // Send via whatsappManager
+            if (campaign.mediaUrl) {
+              await waManager.sendImageMessage("default", contact.phone, campaign.mediaUrl, personalizedMsg);
+            } else {
+              await waManager.sendTextMessage("default", contact.phone, personalizedMsg);
+            }
+
+            await db
+              .update(campaignRecipients)
+              .set({ status: "sent", completedAt: Date.now(), attemptedAt: Date.now() })
+              .where(eq(campaignRecipients.id, recipient.id));
+            successCount++;
+          } catch (sendErr) {
+            console.error(`[Campaign Scheduler] Failed to send message to ${contact.phone}:`, sendErr);
+            await db
+              .update(campaignRecipients)
+              .set({ status: "failed", attemptedAt: Date.now() })
+              .where(eq(campaignRecipients.id, recipient.id));
+            failCount++;
+          }
+        }
+
+        // Update campaign status to completed
+        await db
+          .update(campaigns)
+          .set({ status: "completed", finishedAt: Date.now(), updatedAt: Date.now() })
+          .where(eq(campaigns.id, campaign.id));
+
+        console.log(`[Campaign Scheduler] Finished campaign: ${campaign.name}. Success: ${successCount}, Fail: ${failCount}`);
+      }
+    } catch (loopErr) {
+      console.error("[Campaign Scheduler] Error in background loop:", loopErr);
+    }
+  }, 30000);
 
   // Unified API key and JWT authentication middleware
   const authenticateApiKey = async (req: AuthenticatedRequest, res: Response, nextFn: NextFunction) => {
@@ -173,8 +293,8 @@ app.prepare().then(async () => {
           pushName: null,
         }
       });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -185,8 +305,8 @@ app.prepare().then(async () => {
         success: true,
         data: { qrCode: qr?.qrCode || null }
       });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -194,8 +314,8 @@ app.prepare().then(async () => {
     try {
       await sessionService.startSession("default");
       return res.json({ success: true, message: "Connection loop initiated" });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -203,8 +323,8 @@ app.prepare().then(async () => {
     try {
       await sessionService.stopSession("default");
       return res.json({ success: true, message: "Disconnected successfully" });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -212,8 +332,8 @@ app.prepare().then(async () => {
     try {
       await sessionService.deleteSession("default");
       return res.json({ success: true, message: "Logged out and deleted credentials" });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -246,10 +366,10 @@ app.prepare().then(async () => {
         message: "WhatsApp message dispatched successfully",
         timestamp: new Date().toISOString(),
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return res.status(500).json({
         success: false,
-        error: { code: "INTEGRATION_FAILED", message: error.message || String(error) },
+        error: { code: "INTEGRATION_FAILED", message: error instanceof Error ? error.message : String(error) },
       });
     }
   });
@@ -262,8 +382,8 @@ app.prepare().then(async () => {
       const phone = to.split("@")[0].replace(/\D/g, "");
       const result = await waManager.sendTextMessage("default", phone, content);
       return res.json({ success: true, id: result.messageId });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -274,8 +394,8 @@ app.prepare().then(async () => {
       const phone = to.split("@")[0].replace(/\D/g, "");
       const result = await waManager.sendImageMessage("default", phone, url, caption || "");
       return res.json({ success: true, id: result.messageId });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -285,8 +405,8 @@ app.prepare().then(async () => {
       if (!phone || !message) return res.status(400).json({ success: false, error: "Missing phone or message" });
       const result = await waManager.sendTextMessage("default", phone, message);
       return res.json({ success: true, id: result.messageId });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message || String(error) });
+    } catch (error: unknown) {
+      return res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -295,8 +415,8 @@ app.prepare().then(async () => {
     try {
       const list = await apiKeyService.listKeys();
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -305,8 +425,8 @@ app.prepare().then(async () => {
       const { name, role, expiresAt } = req.body;
       const key = await apiKeyService.createKey(name, role, expiresAt);
       return res.json(key);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -315,8 +435,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await apiKeyService.deleteKey(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -325,8 +445,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await apiKeyService.revokeKey(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -335,8 +455,8 @@ app.prepare().then(async () => {
     try {
       const list = await webhookService.listAllWebhooks();
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -345,8 +465,8 @@ app.prepare().then(async () => {
       const sessionId = req.params.sessionId as string;
       const list = await webhookService.listSessionWebhooks(sessionId);
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -356,8 +476,8 @@ app.prepare().then(async () => {
       const { url, events, secret } = req.body;
       const created = await webhookService.createWebhook(sessionId, url, events, secret);
       return res.json(created);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -367,8 +487,8 @@ app.prepare().then(async () => {
       const { url, events, active } = req.body;
       await webhookService.updateWebhook(id, url, events, active);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -377,8 +497,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await webhookService.deleteWebhook(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -387,8 +507,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       const resVal = await webhookService.testWebhook(id);
       return res.json(resVal);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -397,8 +517,8 @@ app.prepare().then(async () => {
     try {
       const list = await templateService.listTemplates();
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -407,8 +527,8 @@ app.prepare().then(async () => {
       const sessionId = req.params.sessionId as string;
       const list = await templateService.listTemplates(sessionId);
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -417,8 +537,8 @@ app.prepare().then(async () => {
       const { sessionId, name, body, header, footer } = req.body;
       const template = await templateService.createTemplate(sessionId, name, body, header, footer);
       return res.json(template);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -427,8 +547,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await templateService.deleteTemplate(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -437,8 +557,8 @@ app.prepare().then(async () => {
     try {
       const list = await sessionService.listSessions();
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -446,8 +566,8 @@ app.prepare().then(async () => {
     try {
       const stats = await sessionService.getStats();
       return res.json(stats);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -457,8 +577,8 @@ app.prepare().then(async () => {
       const details = await sessionService.getSessionById(id);
       if (!details) return res.status(404).json({ success: false, error: "Session not found" });
       return res.json(details);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -466,8 +586,8 @@ app.prepare().then(async () => {
     try {
       const created = await sessionService.createSession(req.body.name);
       return res.json(created);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -476,8 +596,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await sessionService.deleteSession(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -486,8 +606,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await sessionService.startSession(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -496,8 +616,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await sessionService.stopSession(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -506,8 +626,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await sessionService.forceKillSession(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -517,8 +637,8 @@ app.prepare().then(async () => {
       const qr = await sessionService.getQR(id);
       if (!qr) return res.status(404).json({ success: false, error: "Session not found" });
       return res.json(qr);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -526,8 +646,8 @@ app.prepare().then(async () => {
     try {
       const list = await sessionService.getChats();
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -535,8 +655,8 @@ app.prepare().then(async () => {
     try {
       const msgs = await sessionService.getMessages(String(req.query.chatId));
       return res.json(msgs);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -546,8 +666,8 @@ app.prepare().then(async () => {
       const cleanPhone = chatId.split("@")[0];
       const result = await waManager.sendTextMessage(req.params.sessionId, cleanPhone, text);
       return res.json({ messageId: result.messageId, timestamp: Date.now() });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -557,8 +677,8 @@ app.prepare().then(async () => {
       const cleanPhone = chatId.split("@")[0];
       const result = await waManager.sendImageMessage(req.params.sessionId, cleanPhone, url, caption || "");
       return res.json({ messageId: result.messageId, timestamp: Date.now() });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -568,8 +688,8 @@ app.prepare().then(async () => {
       const isApiKey = req.user?.email === "api_key@autoreach.com";
       const list = await crmService.listLeads(isApiKey ? undefined : req.user?.userId);
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -578,8 +698,8 @@ app.prepare().then(async () => {
       const { name, email, phone, status, value, notes } = req.body;
       const lead = await crmService.createLead(name, email, phone, status, value, notes, req.user?.userId);
       return res.json(lead);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -588,8 +708,8 @@ app.prepare().then(async () => {
       const { name, email, phone, status, value, notes } = req.body;
       await crmService.updateLead(req.params.id, name, email, phone, status, value, notes);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -598,8 +718,8 @@ app.prepare().then(async () => {
       const id = req.params.id as string;
       await crmService.deleteLead(id);
       return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -608,8 +728,8 @@ app.prepare().then(async () => {
       const isApiKey = req.user?.email === "api_key@autoreach.com";
       const list = await crmService.listTasks(isApiKey ? undefined : req.user?.userId);
       return res.json(list);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -618,8 +738,8 @@ app.prepare().then(async () => {
       const { leadId, title, description, status, dueDate } = req.body;
       const task = await crmService.createTask(leadId, title, description, status, dueDate, req.user?.userId);
       return res.json(task);
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -632,8 +752,8 @@ app.prepare().then(async () => {
         data: { leads: leadsList, tasks: tasksList },
         timestamp: new Date().toISOString(),
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -647,8 +767,8 @@ app.prepare().then(async () => {
         message: `Processed ${result.syncedIds.length} operations`,
         timestamp: new Date().toISOString(),
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message || String(err) });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -1006,19 +1126,32 @@ app.prepare().then(async () => {
 
   server.post("/api/campaigns", parseBody, authenticateApiKey, async (req, res) => {
     try {
-      const { name, messageTemplateId, status, scheduledAt, startedAt, finishedAt } = req.body;
+      const { name, messageTemplateId, status, mediaUrl, scheduledAt, startedAt, finishedAt, recipientIds } = req.body;
       const id = `camp_${crypto.randomUUID()}`;
       await db.insert(campaigns).values({
         id,
         name,
         messageTemplateId: messageTemplateId || null,
         status: status || "draft",
+        mediaUrl: mediaUrl || null,
         scheduledAt: scheduledAt || null,
         startedAt: startedAt || null,
         finishedAt: finishedAt || null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+
+      // If recipients are provided, insert them in batch
+      if (Array.isArray(recipientIds) && recipientIds.length > 0) {
+        const batchValues = recipientIds.map((cid: string) => ({
+          id: `cr_${crypto.randomUUID()}`,
+          campaignId: id,
+          contactId: cid,
+          status: "pending",
+        }));
+        await db.insert(campaignRecipients).values(batchValues);
+      }
+
       res.json({ id, ...req.body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     } catch (err) {
       res.status(500).json({ success: false, error: String(err) });

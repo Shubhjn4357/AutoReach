@@ -35,7 +35,7 @@ export interface Task {
 
 export interface SyncOperation {
   id: number;
-  table: "leads" | "tasks";
+  table: "leads" | "tasks" | "campaigns";
   operation: "CREATE" | "UPDATE" | "DELETE";
   recordId: string;
   payload: string; // JSON string payload
@@ -51,4 +51,26 @@ export interface SyncBatchResponse {
   success: boolean;
   syncedIds: string[];
   errors?: { recordId: string; error: string }[];
+}
+export interface Campaign {
+  id: string;
+  name: string;
+  messageTemplateId: string | null;
+  status: string;
+  mediaUrl: string | null;
+  scheduledAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DriveFile {
+  id: string;
+  userId: string | null;
+  leadId: string | null;
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  webViewLink: string | null;
+  createdAt: number;
 }

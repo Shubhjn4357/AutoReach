@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import api, { Lead } from "../../app/lib/api";
+import api from "../../app/lib/api";
 import { Send, Image, MessageSquare, User, RefreshCw, Paperclip } from "lucide-react";
 
 type ChatSummary = {
@@ -26,7 +26,6 @@ type ChatMessage = {
 };
 
 export default function ChatsView() {
-  const [leadsList, setLeadsList] = useState<Lead[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSummary | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -42,18 +41,14 @@ export default function ChatsView() {
       setLoading(true);
       setError(null);
       
-      // Pull leads and sessions
-      const leadsRes = await api.crm.listLeads();
-      setLeadsList(leadsRes);
-      
       const sessionChats = await api.sessions.getChats("default").catch(() => []);
       setChats(sessionChats);
       
       if (sessionChats.length > 0 && !selectedChat) {
         setSelectedChat(sessionChats[0]);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to load chats");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load chats");
     } finally {
       setLoading(false);
     }
@@ -107,8 +102,8 @@ export default function ChatsView() {
       
       // Refresh messages
       fetchMessages(selectedChat.id);
-    } catch (err: any) {
-      setError(err.message || "Failed to dispatch WhatsApp message");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to dispatch WhatsApp message");
     }
   };
 

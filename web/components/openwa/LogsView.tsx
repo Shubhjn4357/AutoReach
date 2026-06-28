@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api, { AuditLogSummary } from "../../app/lib/api";
-import { Terminal, ShieldAlert, CheckCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 export default function LogsView() {
   const [logs, setLogs] = useState<AuditLogSummary[]>([]);
@@ -14,8 +14,8 @@ export default function LogsView() {
       setLoading(true);
       const res = await api.auditLogs.list();
       setLogs(res.data || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to load audit logs");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load audit logs");
     } finally {
       setLoading(false);
     }

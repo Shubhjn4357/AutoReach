@@ -192,6 +192,7 @@ export const campaigns = sqliteTable("campaigns", {
   name: text("name").notNull(),
   messageTemplateId: text("message_template_id").references(() => messageTemplates.id),
   status: text("status").notNull().default("draft"),
+  mediaUrl: text("media_url"),
   scheduledAt: integer("scheduled_at"),
   startedAt: integer("started_at"),
   finishedAt: integer("finished_at"),

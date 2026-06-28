@@ -1,7 +1,8 @@
 import { db } from "../../shared/dbClient";
 import { leads, tasks } from "../../shared/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { SyncOperation } from "../../shared/types";
 
 export const crmService = {
   listLeads: async (userId?: string) => {
@@ -70,7 +71,7 @@ export const crmService = {
     return newTask;
   },
 
-  syncOperations: async (operations: any[], defaultUserId: string | null) => {
+  syncOperations: async (operations: Omit<SyncOperation, "id">[], defaultUserId: string | null) => {
     const syncedIds: string[] = [];
     const errors: { recordId: string; error: string }[] = [];
 
@@ -143,8 +144,8 @@ export const crmService = {
           }
         }
         syncedIds.push(op.recordId);
-      } catch (err: any) {
-        errors.push({ recordId: op.recordId, error: err.message || String(err) });
+      } catch (err: unknown) {
+        errors.push({ recordId: op.recordId, error: err instanceof Error ? err.message : String(err) });
       }
     }
 

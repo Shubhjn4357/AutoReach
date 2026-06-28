@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api, { WebhookSummary } from "../../app/lib/api";
-import { Plus, Trash2, Send, CheckCircle, RefreshCw, Activity, ShieldAlert } from "lucide-react";
+import { Plus, Trash2, Send } from "lucide-react";
 
 export default function WebhooksView() {
   const [webhooks, setWebhooks] = useState<WebhookSummary[]>([]);
@@ -20,8 +20,8 @@ export default function WebhooksView() {
       setLoading(true);
       const list = await api.webhooks.list();
       setWebhooks(list);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch webhooks");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to fetch webhooks");
     } finally {
       setLoading(false);
     }
@@ -54,8 +54,8 @@ export default function WebhooksView() {
       setSelectedEvents(["message.received"]);
       setSuccess("Webhook endpoint configured successfully");
       fetchWebhooks();
-    } catch (err: any) {
-      setError(err.message || "Failed to create webhook");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create webhook");
     }
   };
 
@@ -67,8 +67,8 @@ export default function WebhooksView() {
       await api.webhooks.delete("default", id);
       setSuccess("Webhook endpoint deleted");
       fetchWebhooks();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete webhook");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete webhook");
     }
   };
 
@@ -82,8 +82,8 @@ export default function WebhooksView() {
       } else {
         setError(`Test delivery failed (Status Code: ${testRes.statusCode})`);
       }
-    } catch (err: any) {
-      setError(err.message || "Test dispatch failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Test dispatch failed");
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -21,6 +21,12 @@ WebBrowser.maybeCompleteAuthSession();
 export default function AuthScreen() {
   const store = useAppStore();
   const { colors, glassStyle, glassInputStyle } = useTheme();
+
+  const [inputApiUrl, setInputApiUrl] = useState(store.apiUrl);
+
+  useEffect(() => {
+    setInputApiUrl(store.apiUrl);
+  }, [store.apiUrl]);
 
   // Custom Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -91,6 +97,24 @@ export default function AuthScreen() {
             <Text style={[styles.cardTitle, { color: colors.text }]}>
               Workspace Authentication
             </Text>
+
+            {/* Server Endpoint URL Configuration */}
+            <View style={[styles.inputGroup, { marginBottom: 20 }]}>
+              <Text
+                style={[styles.inputLabel, { color: colors.textSecondary }]}
+              >
+                Server API Endpoint URL
+              </Text>
+              <TextInput
+                placeholder="e.g. http://192.168.1.50:3000"
+                placeholderTextColor={colors.textMuted}
+                value={inputApiUrl}
+                onChangeText={setInputApiUrl}
+                onBlur={() => store.setApiUrl(inputApiUrl)}
+                autoCapitalize="none"
+                style={glassInputStyle}
+              />
+            </View>
 
             {/* Google Credentials Sign In */}
             <View style={styles.googleContainer}>

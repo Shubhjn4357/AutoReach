@@ -9,7 +9,7 @@ import * as BackgroundTask from "expo-background-task";
 import * as Notifications from "expo-notifications";
 
 import { initDb, getPendingWhatsAppMessages, updateWhatsAppMessageStatus, logSentMessage } from "../services/db";
-import { bootstrapStore, useAppStore, getSecureItem, saveSecureItem } from "../services/store";
+import { bootstrapStore, useAppStore, getSecureItem } from "../services/store";
 import { ThemeProvider, useTheme } from "../services/theme";
 import { registerForPushNotificationsAsync } from "../services/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -70,9 +70,9 @@ TaskManager.defineTask(BACKGROUND_WHATSAPP_QUEUE, async () => {
           await updateWhatsAppMessageStatus(msg.id, "FAILED", errText);
           console.warn(`[Background Task] Gateway returned error: ${errText}`);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error(`[Background Task] Fetch error sending message:`, err);
-        await updateWhatsAppMessageStatus(msg.id, "FAILED", err.message || "Network request failed");
+        await updateWhatsAppMessageStatus(msg.id, "FAILED", err instanceof Error ? err.message : "Network request failed");
       }
     }
 
@@ -262,7 +262,7 @@ function InnerRootLayout() {
   // Foreground WhatsApp Queue Processor (without WebView)
   useEffect(() => {
     if (!appReady) return;
-    let timerId: any;
+    let timerId: ReturnType<typeof setInterval>;
     
     async function processQueue() {
       try {
@@ -298,8 +298,8 @@ function InnerRootLayout() {
               const errText = await response.text().catch(() => "Response not OK");
               await updateWhatsAppMessageStatus(msg.id, "FAILED", errText);
             }
-          } catch (err: any) {
-            await updateWhatsAppMessageStatus(msg.id, "FAILED", err.message || "Network error");
+          } catch (err) {
+            await updateWhatsAppMessageStatus(msg.id, "FAILED", err instanceof Error ? err.message : "Network error");
           }
         }
       } catch (err) {

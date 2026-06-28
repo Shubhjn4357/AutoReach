@@ -88,7 +88,6 @@ export const webhookService = {
       headers["X-AutoReach-Signature"] = signature;
     }
 
-    const start = Date.now();
     try {
       const testRes = await fetch(webhookRecord.url, {
         method: "POST",
@@ -103,12 +102,12 @@ export const webhookService = {
         statusCode: testRes.status,
       });
       return { success: testRes.ok, statusCode: testRes.status };
-    } catch (e: any) {
+    } catch (e: unknown) {
       await auditService.logAudit("test_webhook", "error", {
         sessionId: webhookRecord.sessionId,
         path: `/api/sessions/${webhookRecord.sessionId}/webhooks/${id}/test`,
         method: "POST",
-        errorMessage: e.message || String(e)
+        errorMessage: e instanceof Error ? e.message : String(e)
       });
       return { success: false, statusCode: 500 };
     }

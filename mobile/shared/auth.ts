@@ -77,7 +77,7 @@ export function verifyToken(token: string): JWTPayload | null {
     }
 
     return payload;
-  } catch (err) {
+  } catch {
     return null;
   }
 }

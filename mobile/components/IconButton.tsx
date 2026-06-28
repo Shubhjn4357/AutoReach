@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, Text, View, StyleSheet, ViewStyle } from "react-native";
+import { Pressable, StyleSheet, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../services/theme";
 import { hapticLight } from "../services/haptics";

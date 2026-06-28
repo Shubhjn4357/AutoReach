@@ -154,8 +154,8 @@ export const infra = {
     apiFetch<SuccessResponse>("/infra/config", { method: "PUT", body: JSON.stringify(data) }),
 };
 
-import { Lead, Task } from "../../../shared/types";
-export type { Lead, Task };
+import { Lead, Task, Campaign, DriveFile, LeadStatus } from "../../../shared/types";
+export type { Lead, Task, Campaign, DriveFile, LeadStatus };
 
 export const crm = {
   listLeads: () => apiFetch<Lead[]>("/leads"),
@@ -166,5 +166,14 @@ export const crm = {
   createTask: (data: Partial<Task>) => apiFetch<Task>("/tasks", { method: "POST", body: JSON.stringify(data) }),
 };
 
-export const api = { sessions, webhooks, templates, apiKeys, auditLogs, plugins, whatsapp, infra, crm };
+export const campaigns = {
+  list: () => apiFetch<Campaign[]>("/campaigns"),
+  create: (data: { name: string; messageTemplateId: string; status: string; mediaUrl?: string | null; scheduledAt: number | null; recipientIds?: string[] }) =>
+    apiFetch<{ success: boolean; campaignId: string }>("/campaigns", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+export const api = { sessions, webhooks, templates, apiKeys, auditLogs, plugins, whatsapp, infra, crm, campaigns };
 export default api;

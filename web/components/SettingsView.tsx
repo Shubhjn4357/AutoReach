@@ -8,7 +8,6 @@ interface SettingsViewProps {
   handleUpdateProfile: () => void;
   theme: "dark" | "light";
   toggleThemeMode: () => void;
-  authToken: string | null;
 }
 
 export default function SettingsView({
@@ -17,22 +16,18 @@ export default function SettingsView({
   handleUpdateProfile,
   theme,
   toggleThemeMode,
-  authToken,
 }: SettingsViewProps) {
   const [waStatus, setWaStatus] = useState<string>("DISCONNECTED");
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [pushName, setPushName] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [pollingActive, setPollingActive] = useState<boolean>(true);
 
   // Poll status every 3 seconds
   useEffect(() => {
-    if (!pollingActive) return;
-
     const fetchStatus = async () => {
       try {
-        const json = (await api.whatsapp.status()) as any;
+        const json = (await api.whatsapp.status()) as { success?: boolean; data?: { status: string; phoneNumber: string | null; pushName: string | null } };
         if (json.success && json.data) {
           setWaStatus(json.data.status);
           setPhoneNumber(json.data.phoneNumber);
@@ -40,7 +35,7 @@ export default function SettingsView({
 
           // If QR is ready, fetch the QR code
           if (json.data.status === "QR_READY") {
-            const qrJson = (await api.whatsapp.qr()) as any;
+            const qrJson = (await api.whatsapp.qr()) as { success?: boolean; data?: { qrCode: string | null } };
             if (qrJson.success && qrJson.data) {
               setQrCode(qrJson.data.qrCode);
             }
@@ -56,17 +51,17 @@ export default function SettingsView({
     fetchStatus(); // initial fetch
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
-  }, [pollingActive]);
+  }, []);
 
   const handleConnect = async () => {
     setActionLoading(true);
     try {
-      const json = (await api.whatsapp.connect()) as any;
+      const json = (await api.whatsapp.connect()) as { success?: boolean; error?: { message?: string } };
       if (!json.success) {
         alert(json.error?.message || "Failed to trigger connect loop");
       }
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setActionLoading(false);
     }
@@ -75,15 +70,15 @@ export default function SettingsView({
   const handleDisconnect = async () => {
     setActionLoading(true);
     try {
-      const json = (await api.whatsapp.disconnect()) as any;
+      const json = (await api.whatsapp.disconnect()) as { success?: boolean; error?: { message?: string } };
       if (json.success) {
         setWaStatus("DISCONNECTED");
         setQrCode(null);
       } else {
         alert(json.error?.message || "Failed to disconnect");
       }
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setActionLoading(false);
     }
@@ -93,7 +88,7 @@ export default function SettingsView({
     if (!confirm("Are you sure you want to unlink and delete WhatsApp credentials?")) return;
     setActionLoading(true);
     try {
-      const json = (await api.whatsapp.logout()) as any;
+      const json = (await api.whatsapp.logout()) as { success?: boolean; error?: { message?: string } };
       if (json.success) {
         setWaStatus("DISCONNECTED");
         setQrCode(null);
@@ -102,8 +97,8 @@ export default function SettingsView({
       } else {
         alert(json.error?.message || "Failed to logout");
       }
-    } catch (err: any) {
-      alert("Error: " + err.message);
+    } catch (err: unknown) {
+      alert("Error: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setActionLoading(false);
     }

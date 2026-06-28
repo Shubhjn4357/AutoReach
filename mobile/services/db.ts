@@ -1,8 +1,9 @@
-﻿import * as SQLite from "expo-sqlite";
+import * as SQLite from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
-import { desc, eq, and, sql } from "drizzle-orm";
+import { desc, eq, sql, count, type InferSelectModel } from "drizzle-orm";
 import { Lead, Task, SyncOperation } from "../../shared/types";
 import * as schema from "./schema";
+import { migrationStatements } from "../drizzle/migrations";
 
 export interface DriveFile {
   id: string;
@@ -76,195 +77,25 @@ export async function initDb(db?: SQLite.SQLiteDatabase) {
 
   await db.execAsync("PRAGMA journal_mode = WAL;");
 
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT,
-      google_id TEXT,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS leads (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      name TEXT NOT NULL,
-      email TEXT,
-      phone TEXT,
-      status TEXT DEFAULT 'NEW' NOT NULL,
-      value INTEGER DEFAULT 0 NOT NULL,
-      notes TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      lead_id TEXT,
-      title TEXT NOT NULL,
-      description TEXT,
-      status TEXT DEFAULT 'PENDING' NOT NULL,
-      due_date INTEGER,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS drive_files (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      lead_id TEXT,
-      file_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      size INTEGER NOT NULL,
-      web_view_link TEXT,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS sync_queue (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      "table" TEXT NOT NULL,
-      operation TEXT NOT NULL,
-      record_id TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      attempts INTEGER DEFAULT 0 NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS sent_messages_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      channel TEXT NOT NULL,
-      recipient_phone TEXT NOT NULL,
-      status TEXT NOT NULL,
-      timestamp INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS message_templates (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `);
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS whatsapp_outbox (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      recipient_phone TEXT NOT NULL,
-      message_body TEXT NOT NULL,
-      media_uri TEXT,
-      status TEXT NOT NULL DEFAULT 'PENDING',
-      error_message TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
+  // Initialize SQLite database tables using Drizzle schema-generated migration statements
+  for (const statement of migrationStatements) {
+    if (statement.trim()) {
+      await db.execAsync(statement);
+    }
+  }
 
   try {
     await db.execAsync("ALTER TABLE whatsapp_outbox ADD COLUMN media_uri TEXT;");
-  } catch (err) {
+  } catch {
     // Column already exists
   }
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS contacts (
-      id TEXT PRIMARY KEY NOT NULL,
-      session_id TEXT,
-      name TEXT NOT NULL,
-      push_name TEXT,
-      phone TEXT NOT NULL,
-      is_whatsapp_user INTEGER DEFAULT 1 NOT NULL,
-      labels TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS groups (
-      id TEXT PRIMARY KEY NOT NULL,
-      session_id TEXT,
-      group_jid TEXT NOT NULL UNIQUE,
-      name TEXT,
-      description TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS group_participants (
-      id TEXT PRIMARY KEY NOT NULL,
-      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-      participant_jid TEXT NOT NULL,
-      is_admin INTEGER DEFAULT 0 NOT NULL,
-      joined_at INTEGER
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY NOT NULL,
-      message_id TEXT NOT NULL UNIQUE,
-      session_id TEXT NOT NULL,
-      chat_id TEXT NOT NULL,
-      from_me INTEGER NOT NULL,
-      sender TEXT,
-      type TEXT NOT NULL,
-      body TEXT,
-      caption TEXT,
-      media_url TEXT,
-      timestamp INTEGER NOT NULL,
-      received_at INTEGER NOT NULL
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS settings (
-      id TEXT PRIMARY KEY NOT NULL,
-      key TEXT NOT NULL UNIQUE,
-      value TEXT,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS campaigns (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      message_template_id TEXT REFERENCES message_templates(id),
-      status TEXT NOT NULL DEFAULT 'draft',
-      scheduled_at INTEGER,
-      started_at INTEGER,
-      finished_at INTEGER,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS campaign_recipients (
-      id TEXT PRIMARY KEY NOT NULL,
-      campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-      contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'pending',
-      attempted_at INTEGER,
-      completed_at INTEGER
-    );
-  `);
-  console.log("Local SQLite tables initialized.");
+  console.log("Local SQLite tables initialized using Drizzle Schema.");
 }
 
 // Leads Helpers
 export async function getLocalLeads(): Promise<Lead[]> {
   const db = getDrizzle();
-  const rows = await db.select().from(schema.leads).orderBy(desc(schema.leads.createdAt));
+  const rows = (await db.select().from(schema.leads).orderBy(desc(schema.leads.createdAt))) as unknown as Array<InferSelectModel<typeof schema.leads>>;
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
@@ -282,7 +113,7 @@ export async function getLocalLeads(): Promise<Lead[]> {
 export async function getLocalLead(id: string): Promise<Lead | null> {
   if (!id) return null;
   const db = getDrizzle();
-  const rows = await db.select().from(schema.leads).where(eq(schema.leads.id, id)).limit(1);
+  const rows = (await db.select().from(schema.leads).where(eq(schema.leads.id, id)).limit(1)) as unknown as Array<InferSelectModel<typeof schema.leads>>;
   if (rows.length === 0) return null;
   const r = rows[0];
   return {
@@ -353,13 +184,13 @@ export async function deleteLocalLead(id: string) {
 // Tasks Helpers
 export async function getLocalTasks(): Promise<Task[]> {
   const db = getDrizzle();
-  const rows = await db.select().from(schema.tasks).orderBy(desc(schema.tasks.createdAt));
+  const rows = (await db.select().from(schema.tasks).orderBy(desc(schema.tasks.createdAt))) as unknown as Array<InferSelectModel<typeof schema.tasks>>;
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
     leadId: r.leadId,
     title: r.title,
-    description: r.description,
+    description: r.description || null,
     status: r.status as Task["status"],
     dueDate: r.dueDate,
     createdAt: r.createdAt,
@@ -410,7 +241,7 @@ export async function updateLocalTaskStatus(
     .set({ status })
     .where(eq(schema.tasks.id, id));
 
-  const rows = await db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).limit(1);
+  const rows = (await db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).limit(1)) as unknown as Array<InferSelectModel<typeof schema.tasks>>;
   const task = rows[0];
   if (task) {
     await enqueueSyncOperation("tasks", "UPDATE", id, {
@@ -464,9 +295,8 @@ export async function createLocalDriveFile(file: DriveFile) {
   });
 }
 
-// Sync Queue Helpers
 export async function enqueueSyncOperation(
-  table: "leads" | "tasks",
+  table: "leads" | "tasks" | "campaigns",
   operation: "CREATE" | "UPDATE" | "DELETE",
   recordId: string,
   payload: Record<string, unknown>,
@@ -485,7 +315,7 @@ export async function enqueueSyncOperation(
 
 export async function getQueuedOperations(): Promise<SyncOperation[]> {
   const db = getDrizzle();
-  const rows = await db.select().from(schema.syncQueue).orderBy(schema.syncQueue.id);
+  const rows = (await db.select().from(schema.syncQueue).orderBy(schema.syncQueue.id)) as unknown as Array<InferSelectModel<typeof schema.syncQueue>>;
   return rows.map((r) => ({
     id: r.id,
     table: r.table as SyncOperation["table"],
@@ -526,9 +356,9 @@ export async function logSentMessage(
 
 export async function getSentMessageStats(): Promise<MessageStats> {
   const db = getDrizzle();
-  const totalRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog);
-  const waRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'whatsapp'));
-  const smsRow = await db.select({ count: sql<number>`count(*)` }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'sms'));
+  const totalRow = await db.select({ count: count() }).from(schema.sentMessagesLog);
+  const waRow = await db.select({ count: count() }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'whatsapp'));
+  const smsRow = await db.select({ count: count() }).from(schema.sentMessagesLog).where(eq(schema.sentMessagesLog.channel, 'sms'));
   
   return {
     totalSent: totalRow[0]?.count || 0,
@@ -540,7 +370,7 @@ export async function getSentMessageStats(): Promise<MessageStats> {
 // Templates Helpers
 export async function getLocalTemplates(): Promise<MessageTemplate[]> {
   const db = getDrizzle();
-  const rows = await db.select().from(schema.messageTemplates).orderBy(desc(schema.messageTemplates.createdAt));
+  const rows = (await db.select().from(schema.messageTemplates).orderBy(desc(schema.messageTemplates.createdAt))) as unknown as Array<InferSelectModel<typeof schema.messageTemplates>>;
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -588,7 +418,7 @@ export async function enqueueWhatsAppMessage(phone: string, body: string, mediaU
     createdAt: now,
     updatedAt: now,
   });
-  return (result as any).lastInsertRowId;
+  return (result as { lastInsertRowId: number }).lastInsertRowId;
 }
 
 export async function getPendingWhatsAppMessages(): Promise<QueuedMessage[]> {
@@ -670,4 +500,56 @@ export async function createLocalLeadsBatch(leadsList: Lead[]) {
     }
   });
   console.log(`Batch created ${leadsList.length} leads in SQLite.`);
+}
+
+export async function createLocalCampaign(campaign: {
+  id: string;
+  name: string;
+  messageTemplateId: string | null;
+  status: string;
+  mediaUrl: string | null;
+  scheduledAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}, recipientIds: string[]) {
+  const db = getDrizzle();
+  
+  // Insert campaign record
+  await db.insert(schema.campaigns).values({
+    id: campaign.id,
+    name: campaign.name,
+    messageTemplateId: campaign.messageTemplateId,
+    status: campaign.status,
+    mediaUrl: campaign.mediaUrl,
+    scheduledAt: campaign.scheduledAt,
+    createdAt: campaign.createdAt,
+    updatedAt: campaign.updatedAt,
+  });
+
+  // Insert recipients in batch
+  if (recipientIds.length > 0) {
+    const batchRecipients = recipientIds.map((cid) => ({
+      id: `cr_${Math.random().toString(36).substring(2, 9)}`,
+      campaignId: campaign.id,
+      contactId: cid,
+      status: "pending",
+    }));
+    
+    const chunkSize = 100;
+    for (let i = 0; i < batchRecipients.length; i += chunkSize) {
+      const chunk = batchRecipients.slice(i, i + chunkSize);
+      await db.insert(schema.campaignRecipients).values(chunk);
+    }
+  }
+
+  // Enqueue sync operation for backend
+  await enqueueSyncOperation(
+    "campaigns",
+    "CREATE",
+    campaign.id,
+    {
+      ...campaign,
+      recipientIds,
+    } as unknown as Record<string, unknown>
+  );
 }

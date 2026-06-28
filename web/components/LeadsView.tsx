@@ -12,19 +12,18 @@ import {
   FileText,
   UploadCloud,
   Sparkles,
-  DollarSign,
   Phone,
   Mail,
   FolderOpen,
   Activity,
   AlertCircle,
 } from "lucide-react";
-import { Lead, LeadStatus } from "../../shared/types";
+import { Lead, LeadStatus, DriveFile } from "../../shared/types";
 
 interface LeadsViewProps {
   leads: Lead[];
   metrics: { totalValue: number; winRate: number };
-  driveFiles: any[];
+  driveFiles: DriveFile[];
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   statusFilter: LeadStatus | "ALL";
@@ -37,8 +36,8 @@ interface LeadsViewProps {
 
   // AI CRM Auditor
   aiLoading: boolean;
-  aiResult: any;
-  setAiResult: (result: any) => void;
+  aiResult: { score?: number; risk?: string; suggestion?: string; grade?: string; summary?: string; suggestedAction?: string; proposedQuickReply?: string } | null;
+  setAiResult: (result: { score?: number; risk?: string; suggestion?: string; grade?: string; summary?: string; suggestedAction?: string; proposedQuickReply?: string } | null) => void;
   runAiAudit: (lead: Lead) => void;
   dispatchLoading: boolean;
   handleMessageDispatch: (channel: "whatsapp" | "sms", text: string) => void;
@@ -46,8 +45,8 @@ interface LeadsViewProps {
   // Drive integration
   generateLoading: boolean;
   handleGenerateContract: (lead: Lead) => void;
-  setActiveTab: (tab: "leads" | "api-status" | "settings") => void;
-  user: any;
+  setActiveTab: (tab: "leads" | "infrastructure" | "settings") => void;
+  user: { name?: string } | null;
 }
 
 export default function LeadsView({
@@ -546,7 +545,7 @@ export default function LeadsView({
               <div className="flex justify-between items-center mt-3 text-[10px] text-[var(--color-text-secondary)] flex-wrap gap-2">
                 {(
                   ["NEW", "CONTACTED", "QUALIFIED", "WON", "LOST"] as const
-                ).map((stage, idx) => {
+                ).map((stage) => {
                   return (
                     <div key={stage} className="flex items-center gap-1.5">
                       <span
@@ -574,7 +573,7 @@ export default function LeadsView({
 
                 <div className="flex flex-col gap-2">
                   <button
-                    onClick={() => setActiveTab("api-status")}
+                    onClick={() => setActiveTab("infrastructure")}
                     className="bg-[var(--color-border)] hover:bg-[var(--color-border)]/80 text-[var(--color-text-primary)] text-[11px] font-semibold py-2 px-3 rounded-md flex items-center justify-between cursor-pointer border border-transparent hover:border-[var(--color-primary)]/25 text-left"
                   >
                     <span>Inspect Integrations Control Room</span>

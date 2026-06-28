@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `media_url` text;

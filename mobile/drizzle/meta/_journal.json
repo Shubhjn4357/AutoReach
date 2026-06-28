@@ -5,22 +5,22 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1781894448981,
-      "tag": "0000_square_betty_ross",
+      "when": 1782647437282,
+      "tag": "0000_military_pet_avengers",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1782129606763,
-      "tag": "0001_stiff_leo",
+      "when": 1782647514893,
+      "tag": "0001_hard_madelyne_pryor",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "6",
-      "when": 1782647759367,
-      "tag": "0002_flat_thunderbolts",
+      "when": 1782647770412,
+      "tag": "0002_dashing_shape",
       "breakpoints": true
     }
   ]

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, Suspense } from "react";
 import {
   Modal,
   StyleSheet,
@@ -97,9 +97,9 @@ export default function LeadsScreen() {
 function LeadsScreenContent() {
   const router = useRouter();
   const store = useAppStore();
-  const { theme, toggleTheme, colors, clayStyle, clayInputStyle, clayCardStyle, glassStyle, glassInputStyle } =
+  const { theme, toggleTheme, colors, glassStyle, glassInputStyle } =
     useTheme();
-  const insets = useSafeAreaInsets();
+  useSafeAreaInsets();
 
   // Custom Alert State
   const [alertConfig, setAlertConfig] = useState<{
@@ -130,7 +130,7 @@ function LeadsScreenContent() {
     });
   };
 
-  const queryClient = useQueryClient();
+  useQueryClient();
 
   // Search & Filter Status
   const [searchQuery, setSearchQuery] = useState("");
@@ -211,11 +211,9 @@ function LeadsScreenContent() {
     campaignImageUri,
     setCampaignImageUri,
     waLocalLinked,
-    setWaLocalLinked,
     autoPilotActive,
     setAutoPilotActive,
     isAutoSending,
-    isAutoSendingRef,
     handlePickCampaignImage,
     startAutoPilotLoop,
     handleBulkSendNext,
@@ -1174,9 +1172,6 @@ function LeadsScreenContent() {
 
                     <Pressable
                       onPress={() => {
-                        const selectedLeadsCount = leads.filter((l) =>
-                          selectedLeadIds.includes(l.id),
-                        ).length;
                         let hasText = customBulkBody.trim().length > 0;
                         if (selectedTemplateId) {
                           const temp = templates.find(

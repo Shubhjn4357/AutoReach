@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api, { PluginSummary } from "../../app/lib/api";
-import { ToggleLeft, ToggleRight, Radio, Shield, RefreshCw } from "lucide-react";
+import { ToggleLeft, ToggleRight, RefreshCw } from "lucide-react";
 
 export default function PluginsView() {
   const [pluginsList, setPluginsList] = useState<PluginSummary[]>([]);
@@ -14,8 +14,8 @@ export default function PluginsView() {
       setLoading(true);
       const list = await api.plugins.list();
       setPluginsList(list);
-    } catch (err: any) {
-      setError(err.message || "Failed to load system extensions");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load system extensions");
     } finally {
       setLoading(false);
     }
@@ -33,8 +33,8 @@ export default function PluginsView() {
         await api.plugins.enable(id);
       }
       fetchPlugins();
-    } catch (err: any) {
-      setError(err.message || "Failed to update plugin state");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update plugin state");
     }
   };
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
-import { Lead, LeadStatus } from "../../shared/types";
+import { LeadStatus } from "../../shared/types";
 
 // --- ADD LEAD MODAL ---
 interface AddLeadModalProps {

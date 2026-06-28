@@ -68,9 +68,13 @@ export function CustomAlert({
             </View>
 
             {/* Title & Message */}
-            <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {typeof title === "string" ? title : String(title || "")}
+            </Text>
             <Text style={[styles.message, { color: colors.textSecondary }]}>
-              {message}
+              {typeof message === "object" && message !== null
+                ? (typeof (message as Record<string, unknown>).message === "string" ? (message as Record<string, unknown>).message as string : JSON.stringify(message))
+                : String(message || "")}
             </Text>
 
             {/* Action Buttons Row */}

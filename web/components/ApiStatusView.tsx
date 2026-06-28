@@ -15,7 +15,7 @@ interface ApiStatusViewProps {
     service: string,
     route: string,
     method: "GET" | "POST",
-    payload?: any,
+    payload?: unknown,
   ) => Promise<void>;
 }
 

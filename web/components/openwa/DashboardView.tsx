@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import api, { SessionStats, SessionSummary } from "../../app/lib/api";
-import { Activity, Radio, Cpu, Database, Plus, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { Activity, Radio, Cpu, RefreshCw, ShieldCheck } from "lucide-react";
 
 export default function DashboardView() {
   const [stats, setStats] = useState<SessionStats | null>(null);
@@ -20,8 +20,8 @@ export default function DashboardView() {
       ]);
       setStats(statsRes);
       setSessionsList(sessionsRes);
-    } catch (err: any) {
-      setError(err.message || "Failed to load dashboard statistics");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load dashboard statistics");
     } finally {
       setLoading(false);
     }

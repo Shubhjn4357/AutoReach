@@ -10,7 +10,7 @@ interface UseSyncOptions {
     message: string,
     type: "info" | "success" | "warning" | "error"
   ) => void;
-  refetchLeads: () => Promise<any>;
+  refetchLeads: () => Promise<unknown>;
 }
 
 export function useSync({ showCustomAlert, refetchLeads }: UseSyncOptions) {
@@ -52,14 +52,14 @@ export function useSync({ showCustomAlert, refetchLeads }: UseSyncOptions) {
       } else {
         showCustomAlert("Sync Failed", "Check your backend connection.", "error");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setSyncing(false);
-      showCustomAlert("Sync Failed", err.message || "An unexpected error occurred.", "error");
+      showCustomAlert("Sync Failed", err instanceof Error ? err.message : "An unexpected error occurred.", "error");
     }
     await invalidateAll();
   };
 
-  const onRefresh = async (refetchTemplates: () => Promise<any>) => {
+  const onRefresh = async (refetchTemplates: () => Promise<unknown>) => {
     setRefreshing(true);
     await Promise.all([
       refetchLeads(),

@@ -26,8 +26,8 @@ if (redisUrl) {
       isConnected = false;
       console.warn("> Redis connection failed:", err.message);
     });
-  } catch (err: any) {
-    console.error("> Failed to initialize Redis client:", err.message);
+  } catch (err: unknown) {
+    console.error("> Failed to initialize Redis client:", err instanceof Error ? err.message : String(err));
   }
 }
 

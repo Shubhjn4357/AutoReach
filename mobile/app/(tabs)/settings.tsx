@@ -12,6 +12,7 @@ import {
   Switch,
   Modal,
   Image,
+  Clipboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -50,7 +51,7 @@ export default function SettingsScreen() {
 
 function SettingsScreenContent() {
   const store = useAppStore();
-  const { colors, glassStyle, glassInputStyle, clayStyle, clayInputStyle } = useTheme();
+  const { colors, glassStyle, glassInputStyle } = useTheme();
 
   const [totalLeads, setTotalLeads] = useState(0);
 
@@ -65,17 +66,10 @@ function SettingsScreenContent() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [waLoading, setWaLoading] = useState(false);
 
-  // Gemini AI / BYOK State
-  const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [tempGeminiKey, setTempGeminiKey] = useState("");
-  const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
-  const [geminiConnected, setGeminiConnected] = useState(false);
-  const [geminiTesting, setGeminiTesting] = useState(false);
-
   // Controls lists from API
-  const [pluginsList, setPluginsList] = useState<any[]>([]);
-  const [webhooksList, setWebhooksList] = useState<any[]>([]);
-  const [apiKeysList, setApiKeysList] = useState<any[]>([]);
+  const [pluginsList, setPluginsList] = useState<unknown[]>([]);
+  const [webhooksList, setWebhooksList] = useState<unknown[]>([]);
+  const [apiKeysList, setApiKeysList] = useState<unknown[]>([]);
 
   // Expandable sections toggles
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
@@ -106,6 +100,12 @@ function SettingsScreenContent() {
     message: "",
     type: "info",
   });
+
+  const [inputApiUrl, setInputApiUrl] = useState(store.apiUrl);
+
+  useEffect(() => {
+    setInputApiUrl(store.apiUrl);
+  }, [store.apiUrl]);
 
   const showCustomAlert = (
     title: string,
@@ -146,7 +146,7 @@ function SettingsScreenContent() {
   useEffect(() => {
     if (!store.token) return;
 
-    let intervalId: any;
+    let intervalId: ReturnType<typeof setInterval>;
     const fetchStatus = async () => {
       try {
         const res = await fetch(`${store.apiUrl}/api/whatsapp/status`, {
@@ -154,8 +154,12 @@ function SettingsScreenContent() {
             Authorization: `Bearer ${store.token}`,
           },
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn("[Mobile Settings] fetchStatus failed with HTTP status:", res.status);
+          return;
+        }
         const json = await res.json();
+        console.log("[Mobile Settings] Polled status:", json.data?.status, "from:", store.apiUrl);
         if (json.success && json.data) {
           setWaStatus(json.data.status);
           setPhoneNumber(json.data.phoneNumber);
@@ -177,9 +181,12 @@ function SettingsScreenContent() {
             });
             if (qrRes.ok) {
               const qrJson = await qrRes.json();
+              console.log("[Mobile Settings] Polled QR code success:", !!qrJson.data?.qrCode);
               if (qrJson.success && qrJson.data) {
                 setQrCode(qrJson.data.qrCode);
               }
+            } else {
+              console.warn("[Mobile Settings] fetchQR failed with HTTP status:", qrRes.status);
             }
           } else {
             setQrCode(null);
@@ -270,8 +277,8 @@ function SettingsScreenContent() {
       } else {
         showCustomAlert("Success", "Node connection loop started.", "success");
       }
-    } catch (err: any) {
-      showCustomAlert("Error", err.message || String(err), "error");
+    } catch (err) {
+      showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
     } finally {
       setWaLoading(false);
     }
@@ -295,8 +302,8 @@ function SettingsScreenContent() {
         setQrCode(null);
         showCustomAlert("Disconnected", "WhatsApp Node disconnected successfully", "info");
       }
-    } catch (err: any) {
-      showCustomAlert("Error", err.message || String(err), "error");
+    } catch (err) {
+      showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
     } finally {
       setWaLoading(false);
     }
@@ -322,8 +329,8 @@ function SettingsScreenContent() {
         setPushName(null);
         showCustomAlert("Logged Out", "WhatsApp session unlinked successfully", "success");
       }
-    } catch (err: any) {
-      showCustomAlert("Error", err.message || String(err), "error");
+    } catch (err) {
+      showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
     } finally {
       setWaLoading(false);
     }
@@ -393,8 +400,8 @@ function SettingsScreenContent() {
         hapticSuccess();
         showCustomAlert("Success", "Webhook registered successfully", "success");
       }
-    } catch (err: any) {
-      showCustomAlert("Error", err.message || String(err), "error");
+    } catch (err) {
+      showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
     } finally {
       setWebhookSaving(false);
     }
@@ -417,8 +424,8 @@ function SettingsScreenContent() {
               fetchControlsData();
               showCustomAlert("Success", "Webhook removed", "success");
             }
-          } catch (err: any) {
-            showCustomAlert("Error", err.message || String(err), "error");
+          } catch (err) {
+            showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
           }
         }
       }
@@ -446,11 +453,12 @@ function SettingsScreenContent() {
         setApiKeyModalVisible(false);
         setNewKeyName("");
         fetchControlsData();
+        Clipboard.setString(keyData.apiKey);
         hapticSuccess();
-        showCustomAlert("API Key Generated", `Keep this key secure. It will not be shown again:\n\n${keyData.apiKey}`, "success");
+        showCustomAlert("API Key Generated", `The API key has been copied to your clipboard automatically. Keep this key secure:\n\n${keyData.apiKey}`, "success");
       }
-    } catch (err: any) {
-      showCustomAlert("Error", err.message || String(err), "error");
+    } catch (err) {
+      showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
     } finally {
       setKeySaving(false);
     }
@@ -474,8 +482,8 @@ function SettingsScreenContent() {
               fetchControlsData();
               showCustomAlert("Success", "Key credentials revoked", "success");
             }
-          } catch (err: any) {
-            showCustomAlert("Error", err.message || String(err), "error");
+          } catch (err) {
+            showCustomAlert("Error", err instanceof Error ? err.message : String(err), "error");
           }
         }
       }
@@ -717,6 +725,21 @@ function SettingsScreenContent() {
                 >
                   {store.user?.role || "ADMIN (Local Dev)"}
                 </Text>
+              </View>
+
+              <View style={[styles.row, { flexDirection: "column", alignItems: "stretch", gap: 6, marginVertical: 8, borderBottomWidth: 0 }]}>
+                <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                  Server API Endpoint URL
+                </Text>
+                <TextInput
+                  value={inputApiUrl}
+                  onChangeText={setInputApiUrl}
+                  onBlur={() => store.setApiUrl(inputApiUrl)}
+                  placeholder="e.g. http://192.168.1.50:3000"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  style={[glassInputStyle, {fontSize: 12, paddingHorizontal: 12, borderRadius: 10 }]}
+                />
               </View>
 
               <Pressable
@@ -987,9 +1010,21 @@ function SettingsScreenContent() {
                         <Text style={{ color: colors.text, fontSize: 11, fontWeight: "bold" }}>{ak.name}</Text>
                         <Text style={{ color: colors.textSecondary, fontSize: 9, marginTop: 2 }}>Prefix: {ak.keyPrefix}****  |  Usage: {ak.usageCount}</Text>
                       </View>
-                      <Pressable onPress={() => handleRevokeApiKey(ak.id)} style={{ padding: 4 }}>
-                        <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
-                      </Pressable>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Pressable
+                          onPress={() => {
+                            Clipboard.setString(ak.keyPrefix);
+                            hapticSuccess();
+                            showCustomAlert("Copied", "API Key prefix copied to clipboard.", "success");
+                          }}
+                          style={{ padding: 4 }}
+                        >
+                          <Ionicons name="copy-outline" size={16} color={colors.primary} />
+                        </Pressable>
+                        <Pressable onPress={() => handleRevokeApiKey(ak.id)} style={{ padding: 4 }}>
+                          <Ionicons name="close-circle-outline" size={18} color={colors.danger} />
+                        </Pressable>
+                      </View>
                     </View>
                   ))}
                   {apiKeysList.length === 0 && (
