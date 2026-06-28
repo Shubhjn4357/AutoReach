@@ -23,12 +23,6 @@ const TAB_CONFIG = [
     iconOutline: "people-outline" as const,
   },
   {
-    name: "crm",
-    label: "CRM",
-    icon: "funnel" as const,
-    iconOutline: "funnel-outline" as const,
-  },
-  {
     name: "campaigns",
     label: "Reach",
     icon: "megaphone" as const,
@@ -162,7 +156,6 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: "Leads" }} />
-      <Tabs.Screen name="crm" options={{ title: "CRM" }} />
       <Tabs.Screen name="campaigns" options={{ title: "Campaigns" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
     </Tabs>

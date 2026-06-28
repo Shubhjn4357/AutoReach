@@ -164,9 +164,6 @@ export default function LeadsView({
                   <span className="text-xs font-bold text-[var(--color-text-primary)] truncate pr-2">
                     {lead.name}
                   </span>
-                  <span className="text-[var(--color-primary)] font-bold text-xs shrink-0">
-                    ${lead.value.toLocaleString()}
-                  </span>
                 </div>
 
                 <div className="flex justify-between items-center text-[10px]">
@@ -237,21 +234,7 @@ export default function LeadsView({
             </div>
 
             {/* Lead Info Details Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-md flex items-center gap-3">
-                <div className="p-2 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-                  <DollarSign size={16} />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[9px] text-[var(--color-text-muted)] uppercase tracking-wider font-bold block">
-                    Deal Valuation
-                  </span>
-                  <span className="text-sm font-bold text-[var(--color-primary)]">
-                    ${selectedLead.value.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-[var(--color-bg)] border border-[var(--color-border)] p-4 rounded-md flex items-center gap-3">
                 <div className="p-2 rounded-md bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
                   <Phone size={16} />

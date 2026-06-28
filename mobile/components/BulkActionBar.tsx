@@ -133,10 +133,10 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: "row",
-    gap: 12,
+    flexWrap: "wrap",
+    gap: 8,
   },
   actionBtn: {
-    flex: 1,
     height: 40,
     borderRadius: 12,
     flexDirection: "row",
@@ -144,10 +144,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingHorizontal: 8,
+    minWidth: "45%",
+    flex: 1,
   },
   actionBtnText: {
     color: "#FFFFFF",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
 });

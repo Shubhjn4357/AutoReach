@@ -101,9 +101,9 @@ export default function AuthScreen() {
               </Text>
 
               <Button
-                label="Sign In with Google"
+                label={loading ? "Authenticating..." : "Sign In with Google"}
                 onPress={handleNativeGoogleLogin}
-                icon="logo-google"
+                icon={loading ? undefined : "logo-google"}
                 disabled={loading}
                 style={{ backgroundColor: "#4285F4", width: "100%" }}
               />
@@ -146,7 +146,7 @@ export default function AuthScreen() {
             </View>
 
             <Button
-              label="Developer Login Bypass"
+              label={loading ? "Logging in..." : "Developer Login Bypass"}
               onPress={handleBypassLogin}
               disabled={loading}
               variant="primary"

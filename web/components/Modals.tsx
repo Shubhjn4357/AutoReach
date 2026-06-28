@@ -65,37 +65,23 @@ export function AddLeadModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
-                Valuation ($)
-              </label>
-              <input
-                type="number"
-                placeholder="15000"
-                value={form.value}
-                onChange={(e) => setForm({ ...form, value: e.target.value })}
-                className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
-                Status
-              </label>
-              <select
-                value={form.status}
-                onChange={(e) =>
-                  setForm({ ...form, status: e.target.value as LeadStatus })
-                }
-                className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
-              >
-                <option value="NEW">NEW</option>
-                <option value="CONTACTED">CONTACTED</option>
-                <option value="QUALIFIED">QUALIFIED</option>
-                <option value="WON">WON</option>
-                <option value="LOST">LOST</option>
-              </select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
+              Status
+            </label>
+            <select
+              value={form.status}
+              onChange={(e) =>
+                setForm({ ...form, status: e.target.value as LeadStatus })
+              }
+              className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
+            >
+              <option value="NEW">NEW</option>
+              <option value="CONTACTED">CONTACTED</option>
+              <option value="QUALIFIED">QUALIFIED</option>
+              <option value="WON">WON</option>
+              <option value="LOST">LOST</option>
+            </select>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -213,36 +199,23 @@ export function EditLeadModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
-                Valuation ($)
-              </label>
-              <input
-                type="number"
-                value={form.value}
-                onChange={(e) => setForm({ ...form, value: e.target.value })}
-                className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
-                Status
-              </label>
-              <select
-                value={form.status}
-                onChange={(e) =>
-                  setForm({ ...form, status: e.target.value as LeadStatus })
-                }
-                className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
-              >
-                <option value="NEW">NEW</option>
-                <option value="CONTACTED">CONTACTED</option>
-                <option value="QUALIFIED">QUALIFIED</option>
-                <option value="WON">WON</option>
-                <option value="LOST">LOST</option>
-              </select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-[var(--color-text-secondary)] font-bold uppercase tracking-wider">
+              Status
+            </label>
+            <select
+              value={form.status}
+              onChange={(e) =>
+                setForm({ ...form, status: e.target.value as LeadStatus })
+              }
+              className="bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-3 py-2 rounded-md text-xs outline-none focus:border-[var(--color-primary)] transition-all"
+            >
+              <option value="NEW">NEW</option>
+              <option value="CONTACTED">CONTACTED</option>
+              <option value="QUALIFIED">QUALIFIED</option>
+              <option value="WON">WON</option>
+              <option value="LOST">LOST</option>
+            </select>
           </div>
 
           <div className="flex flex-col gap-1.5">

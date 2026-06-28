@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Switch,
   Modal,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
@@ -32,6 +33,7 @@ import {
   hapticWarning,
   hapticError
 } from "../../services/haptics";
+import { useThrottle } from "../../hook/useThrottle";
 
 export default function SettingsScreen() {
   const { colors } = useTheme();
@@ -251,7 +253,7 @@ function SettingsScreenContent() {
   }, [store.token]);
 
   // Node controls
-  const handleConnectNode = async () => {
+  const connectNode = async () => {
     hapticMedium();
     setWaLoading(true);
     try {
@@ -274,8 +276,9 @@ function SettingsScreenContent() {
       setWaLoading(false);
     }
   };
+  const handleConnectNode = useThrottle(connectNode, 2000);
 
-  const handleDisconnectNode = async () => {
+  const disconnectNode = async () => {
     hapticMedium();
     setWaLoading(true);
     try {
@@ -298,8 +301,9 @@ function SettingsScreenContent() {
       setWaLoading(false);
     }
   };
+  const handleDisconnectNode = useThrottle(disconnectNode, 2000);
 
-  const handleLogoutNode = async () => {
+  const logoutNode = async () => {
     hapticWarning();
     setWaLoading(true);
     try {
@@ -324,6 +328,7 @@ function SettingsScreenContent() {
       setWaLoading(false);
     }
   };
+  const handleLogoutNode = useThrottle(logoutNode, 2000);
 
   // Plugins toggle
   const handleTogglePlugin = async (id: string, currentStatus: string) => {
@@ -421,7 +426,7 @@ function SettingsScreenContent() {
   };
 
   // API Keys
-  const handleAddApiKeySubmit = async () => {
+  const addApiKeySubmit = async () => {
     if (!newKeyName.trim()) return;
     setKeySaving(true);
     try {
@@ -450,6 +455,7 @@ function SettingsScreenContent() {
       setKeySaving(false);
     }
   };
+  const handleAddApiKeySubmit = useThrottle(addApiKeySubmit, 2000);
 
   const handleRevokeApiKey = (id: string) => {
     hapticWarning();
@@ -781,7 +787,7 @@ function SettingsScreenContent() {
               {waStatus === "QR_READY" && qrCode && (
                 <View style={{ alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 12, marginBottom: 12, alignSelf: "center" }}>
                   <Text style={{ fontSize: 10, color: "#333", fontWeight: "700", marginBottom: 8 }}>SCAN THIS QR CODE TO PAIR</Text>
-                  <Ionicons name="qr-code" size={160} color="#000" />
+                  <Image source={{ uri: qrCode }} style={{ width: 160, height: 160, resizeMode: "contain" }} />
                   <Text style={{ fontSize: 9, color: "#666", marginTop: 8, textAlign: "center" }}>Scan this via Linked Devices in WhatsApp Web Settings</Text>
                 </View>
               )}

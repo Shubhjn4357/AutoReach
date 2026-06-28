@@ -21,6 +21,8 @@ import {
   createLocalLead,
   getLocalTemplates,
   MessageTemplate,
+  updateLocalLead,
+  deleteLocalLead,
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { LeadCardSkeleton } from "../../components/Skeleton";
@@ -47,6 +49,8 @@ import {
   hapticLight,
   hapticMedium,
   hapticHeavy,
+  hapticSuccess,
+  hapticWarning,
 } from "../../services/haptics";
 
 interface LeadCreateFormData {
@@ -221,6 +225,89 @@ function LeadsScreenContent() {
     showCustomAlert,
     invalidateAll,
   });
+
+  const changeLeadStatus = async (lead: Lead, nextStatus: LeadStatus) => {
+    hapticMedium();
+    const updated: Lead = {
+      ...lead,
+      status: nextStatus,
+      updatedAt: Date.now(),
+    };
+    await updateLocalLead(updated);
+    await invalidateAll();
+    hapticSuccess();
+    showCustomAlert(
+      "Updated!",
+      `${lead.name} moved to ${nextStatus}.`,
+      "success",
+    );
+  };
+
+  const handleDeleteLead = async (id: string) => {
+    hapticHeavy();
+    showCustomAlert(
+      "Confirm Delete",
+      "Are you sure you want to delete this contact?",
+      "warning",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteLocalLead(id);
+            await invalidateAll();
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    hapticHeavy();
+    showCustomAlert(
+      "Confirm Delete",
+      `Are you sure you want to delete ${selectedLeadIds.length} selected contacts?`,
+      "warning",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            for (const id of selectedLeadIds) {
+              await deleteLocalLead(id);
+            }
+            setSelectedLeadIds([]);
+            setIsBulkMode(false);
+            await invalidateAll();
+            hapticSuccess();
+            showCustomAlert("Success", "Selected contacts deleted.", "success");
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBulkStatusChange = async (nextStatus: LeadStatus) => {
+    hapticMedium();
+    for (const id of selectedLeadIds) {
+      const lead = leads.find((l) => l.id === id);
+      if (lead) {
+        const updated: Lead = {
+          ...lead,
+          status: nextStatus,
+          updatedAt: Date.now(),
+        };
+        await updateLocalLead(updated);
+      }
+    }
+    setSelectedLeadIds([]);
+    setIsBulkMode(false);
+    await invalidateAll();
+    hapticSuccess();
+    showCustomAlert("Updated!", `Selected contacts moved to ${nextStatus}.`, "success");
+  };
 
   const handleOnRefresh = () => onRefresh(refetchTemplates);
 
@@ -406,6 +493,52 @@ function LeadsScreenContent() {
                 </View>
               </View>
 
+              {/* CRM Summary Metrics Row */}
+              <View style={styles.summaryRow}>
+                <View
+                  style={[
+                    styles.metricCard,
+                    glassStyle,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Total Contacts
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.primary }]}>
+                    {leads.length}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.metricCard,
+                    glassStyle,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Active Leads
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.success }]}>
+                    {leads.filter((l) => l.status !== "WON" && l.status !== "LOST").length}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.metricCard,
+                    glassStyle,
+                    { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+                    Deals Won
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.accent }]}>
+                    {leads.filter((l) => l.status === "WON").length}
+                  </Text>
+                </View>
+              </View>
+
               {/* Clay Search Bar */}
               <SearchBar
                 value={searchQuery}
@@ -426,25 +559,135 @@ function LeadsScreenContent() {
           renderItem={({ item: lead }) => {
             const isSelected = selectedLeadIds.includes(lead.id);
             return (
-              <LeadCard
-                lead={lead}
-                isBulkMode={isBulkMode}
-                isSelected={isSelected}
-                onPress={() => {
-                  if (isBulkMode) {
-                    hapticLight();
-                    setSelectedLeadIds((prev) =>
-                      prev.includes(lead.id)
-                        ? prev.filter((id) => id !== lead.id)
-                        : [...prev, lead.id],
-                    );
-                  } else {
-                    hapticMedium();
-                    router.push(`/contact/${lead.id}`);
-                  }
-                }}
-                style={{ marginBottom: 12 }}
-              />
+              <View
+                style={[
+                  glassStyle,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    borderWidth: isSelected ? 2 : 1.5,
+                    borderRadius: 22,
+                    overflow: "hidden",
+                    marginBottom: 12,
+                    shadowColor: isSelected ? colors.primary : colors.clayShadowDark,
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: isSelected ? 0.3 : 0.15,
+                    shadowRadius: 14,
+                    elevation: isSelected ? 10 : 6,
+                  },
+                ]}
+              >
+                <LeadCard
+                  lead={lead}
+                  isBulkMode={isBulkMode}
+                  isSelected={isSelected}
+                  onPress={() => {
+                    if (isBulkMode) {
+                      hapticLight();
+                      setSelectedLeadIds((prev) =>
+                        prev.includes(lead.id)
+                          ? prev.filter((id) => id !== lead.id)
+                          : [...prev, lead.id],
+                      );
+                    } else {
+                      hapticMedium();
+                      router.push(`/contact/${lead.id}`);
+                    }
+                  }}
+                  style={{
+                    borderWidth: 0,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    backgroundColor: "transparent",
+                    borderRadius: 0,
+                  }}
+                />
+
+                {/* Transition actions */}
+                {!isBulkMode && (
+                  <View
+                    style={[
+                      styles.actionsContainer,
+                      { borderTopColor: `${colors.border}80`, marginHorizontal: 16, marginBottom: 14, paddingTop: 12 },
+                    ]}
+                  >
+                    <View style={styles.leftActions}>
+                      {lead.status !== "WON" && (
+                        <Pressable
+                          onPress={() => {
+                            hapticMedium();
+                            changeLeadStatus(
+                              lead,
+                              lead.status === "NEW"
+                                ? "CONTACTED"
+                                : lead.status === "CONTACTED"
+                                  ? "QUALIFIED"
+                                  : "WON",
+                            );
+                          }}
+                          style={[
+                            styles.actionBtn,
+                            {
+                              backgroundColor: `${colors.primary}1A`,
+                              borderColor: `${colors.primary}33`,
+                              borderWidth: 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "600",
+                              color: colors.primary,
+                            }}
+                          >
+                            Next Stage ➔
+                          </Text>
+                        </Pressable>
+                      )}
+                      {lead.status !== "LOST" && lead.status !== "WON" && (
+                        <Pressable
+                          onPress={() => { hapticWarning(); changeLeadStatus(lead, "LOST"); }}
+                          style={[
+                            styles.actionBtn,
+                            {
+                              backgroundColor: `${colors.danger}1A`,
+                              borderColor: `${colors.danger}33`,
+                              borderWidth: 1,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "600",
+                              color: colors.danger,
+                            }}
+                          >
+                            Mark Fail
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }} />
+                    <Pressable
+                      onPress={() => handleDeleteLead(lead.id)}
+                      style={styles.deleteBtn}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "bold",
+                          textDecorationLine: "underline",
+                          color: colors.danger,
+                        }}
+                      >
+                        Delete
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             );
           }}
           ListEmptyComponent={
@@ -679,6 +922,24 @@ function LeadsScreenContent() {
                 setBulkTemplateModalVisible(true);
               },
               bgColor: colors.primary,
+            },
+            {
+              label: "Mark WON",
+              icon: "checkmark-circle-outline",
+              onPress: () => handleBulkStatusChange("WON"),
+              bgColor: colors.success,
+            },
+            {
+              label: "Mark LOST",
+              icon: "close-circle-outline",
+              onPress: () => handleBulkStatusChange("LOST"),
+              bgColor: colors.warning,
+            },
+            {
+              label: "Delete",
+              icon: "trash-outline",
+              onPress: handleBulkDelete,
+              bgColor: colors.danger,
             },
           ]}
         />
@@ -1479,5 +1740,51 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 14,
     marginBottom: 8,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  metricCard: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 12,
+  },
+  metricLabel: {
+    fontSize: 9,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  metricValue: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  actionsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  leftActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  actionBtn: {
+    paddingHorizontal: 10,
+    height: 28,
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteBtn: {
+    paddingHorizontal: 8,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
