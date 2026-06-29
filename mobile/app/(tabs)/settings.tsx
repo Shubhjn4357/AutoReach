@@ -19,6 +19,7 @@ import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
 import { getLocalLeads } from "../../services/db";
 import { useSync } from "../../hook/useSync";
+import { useCustomAlert } from "../../hook/useCustomAlert";
 import { removeSecureItem, saveSecureItem, getSecureItem } from "../../services/store";
 
 import { CustomAlert, AlertButton } from "../../components/CustomAlert";
@@ -67,9 +68,9 @@ function SettingsScreenContent() {
   const [waLoading, setWaLoading] = useState(false);
 
   // Controls lists from API
-  const [pluginsList, setPluginsList] = useState<unknown[]>([]);
-  const [webhooksList, setWebhooksList] = useState<unknown[]>([]);
-  const [apiKeysList, setApiKeysList] = useState<unknown[]>([]);
+  const [pluginsList, setPluginsList] = useState<Array<{ id: string; name: string; description: string; status: string }>>([]);
+  const [webhooksList, setWebhooksList] = useState<Array<{ id: string; url: string; events: string[]; active: boolean }>>([]);
+  const [apiKeysList, setApiKeysList] = useState<Array<{ id: string; name: string; keyPrefix: string; usageCount: number }>>([]);
 
   // Expandable sections toggles
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
@@ -87,19 +88,15 @@ function SettingsScreenContent() {
   const [newKeyName, setNewKeyName] = useState("");
   const [keySaving, setKeySaving] = useState(false);
 
-  // Custom Alert State
-  const [alertConfig, setAlertConfig] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    type: "info" | "success" | "warning" | "error";
-    buttons?: AlertButton[];
-  }>({
-    visible: false,
-    title: "",
-    message: "",
-    type: "info",
-  });
+  // Custom Alert State Hook
+  const { alertConfig, showCustomAlert, hideCustomAlert } = useCustomAlert();
+
+  // Gemini state variables
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [tempGeminiKey, setTempGeminiKey] = useState("");
+  const [geminiConnected, setGeminiConnected] = useState(false);
+  const [geminiTesting, setGeminiTesting] = useState(false);
+  const [geminiKeyVisible, setGeminiKeyVisible] = useState(false);
 
   const [inputApiUrl, setInputApiUrl] = useState(store.apiUrl);
 
@@ -107,20 +104,7 @@ function SettingsScreenContent() {
     setInputApiUrl(store.apiUrl);
   }, [store.apiUrl]);
 
-  const showCustomAlert = (
-    title: string,
-    message: string,
-    type: "info" | "success" | "warning" | "error" = "info",
-    buttons?: AlertButton[],
-  ) => {
-    setAlertConfig({
-      visible: true,
-      title,
-      message,
-      type,
-      buttons,
-    });
-  };
+
 
   const {
     syncing,
@@ -1127,7 +1111,7 @@ function SettingsScreenContent() {
                       style={[glassInputStyle, { flex: 1, height: 44 }]}
                     />
                     <Pressable
-                      onPress={() => setGeminiKeyVisible((v) => !v)}
+                      onPress={() => setGeminiKeyVisible((v: boolean) => !v)}
                       style={[styles.eyeBtn, { backgroundColor: colors.primarySoft }]}
                     >
                       <Ionicons
@@ -1330,9 +1314,7 @@ function SettingsScreenContent() {
           message={alertConfig.message}
           type={alertConfig.type}
           buttons={alertConfig.buttons}
-          onClose={() =>
-            setAlertConfig((prev) => ({ ...prev, visible: false }))
-          }
+          onClose={hideCustomAlert}
         />
       </SafeAreaView>
     </View>

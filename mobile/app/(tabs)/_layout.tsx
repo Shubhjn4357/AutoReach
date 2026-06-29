@@ -6,6 +6,7 @@ import {
   Animated,
   Dimensions,
   Text,
+  ColorValue,
 } from "react-native";
 import { Tabs } from "expo-router";
 import { useTheme } from "../../services/theme";
@@ -13,7 +14,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hapticLight } from "../../services/haptics";
 
-import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+interface CustomTabBarProps {
+  state: {
+    index: number;
+    routes: Array<{ key: string; name: string }>;
+  };
+  descriptors: Record<string, {
+    options: {
+      tabBarLabel?: string | ((props: { focused: boolean; color: ColorValue; position: "beside-icon" | "below-icon"; children: string }) => React.ReactNode);
+      title?: string;
+    };
+  }>;
+  navigation: {
+    emit: (options: { type: "tabPress"; target: string; canPreventDefault: true }) => { defaultPrevented: boolean };
+    navigate: (name: string, params?: Record<string, unknown>) => void;
+  };
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -38,7 +54,7 @@ const TAB_CONFIG = [
   },
 ];
 
-function CustomTabBar({ state, descriptors: _descriptors, navigation }: BottomTabBarProps) {
+function CustomTabBar({ state, descriptors: _descriptors, navigation }: CustomTabBarProps) {
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
@@ -61,7 +77,7 @@ function CustomTabBar({ state, descriptors: _descriptors, navigation }: BottomTa
     }).start();
 
     // Scale up active tab
-    state.routes.forEach((_, i: number) => {
+    state.routes.forEach((_r: { key: string; name: string }, i: number) => {
       Animated.spring(scaleAnims[i], {
         toValue: state.index === i ? 1.15 : 1,
         useNativeDriver: true,
