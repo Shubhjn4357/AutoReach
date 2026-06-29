@@ -50,7 +50,6 @@ import {
   hapticMedium,
   hapticHeavy,
   hapticSuccess,
-  hapticWarning,
 } from "../../services/haptics";
 
 interface LeadCreateFormData {
@@ -375,10 +374,7 @@ function LeadsScreenContent() {
   const stages: (LeadStatus | "ALL")[] = [
     "ALL",
     "NEW",
-    "CONTACTED",
-    "QUALIFIED",
-    "WON",
-    "LOST",
+    "SENT",
   ];
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
@@ -515,10 +511,10 @@ function LeadsScreenContent() {
                   ]}
                 >
                   <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                    Active Leads
+                    New Contacts
                   </Text>
                   <Text style={[styles.metricValue, { color: colors.success }]}>
-                    {leads.filter((l) => l.status !== "WON" && l.status !== "LOST").length}
+                    {leads.filter((l) => l.status === "NEW").length}
                   </Text>
                 </View>
                 <View
@@ -529,10 +525,10 @@ function LeadsScreenContent() {
                   ]}
                 >
                   <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-                    Deals Won
+                    Messages Sent
                   </Text>
                   <Text style={[styles.metricValue, { color: colors.accent }]}>
-                    {leads.filter((l) => l.status === "WON").length}
+                    {leads.filter((l) => l.status === "SENT").length}
                   </Text>
                 </View>
               </View>
@@ -610,18 +606,11 @@ function LeadsScreenContent() {
                     ]}
                   >
                     <View style={styles.leftActions}>
-                      {lead.status !== "WON" && (
+                      {lead.status === "NEW" && (
                         <Pressable
                           onPress={() => {
                             hapticMedium();
-                            changeLeadStatus(
-                              lead,
-                              lead.status === "NEW"
-                                ? "CONTACTED"
-                                : lead.status === "CONTACTED"
-                                  ? "QUALIFIED"
-                                  : "WON",
-                            );
+                            changeLeadStatus(lead, "SENT");
                           }}
                           style={[
                             styles.actionBtn,
@@ -639,30 +628,7 @@ function LeadsScreenContent() {
                               color: colors.primary,
                             }}
                           >
-                            Next Stage ➔
-                          </Text>
-                        </Pressable>
-                      )}
-                      {lead.status !== "LOST" && lead.status !== "WON" && (
-                        <Pressable
-                          onPress={() => { hapticWarning(); changeLeadStatus(lead, "LOST"); }}
-                          style={[
-                            styles.actionBtn,
-                            {
-                              backgroundColor: `${colors.danger}1A`,
-                              borderColor: `${colors.danger}33`,
-                              borderWidth: 1,
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 10,
-                              fontWeight: "600",
-                              color: colors.danger,
-                            }}
-                          >
-                            Mark Fail
+                            Mark Sent ➔
                           </Text>
                         </Pressable>
                       )}
@@ -726,6 +692,11 @@ function LeadsScreenContent() {
           onClose={closeDrawer}
           title="Create New Contact"
         >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+
           <View style={{ gap: 16, marginTop: 8 }}>
             <TextInput
               value={formData.name}
@@ -743,10 +714,7 @@ function LeadsScreenContent() {
                 {(
                   [
                     "NEW",
-                    "CONTACTED",
-                    "QUALIFIED",
-                    "LOST",
-                    "WON",
+                      "SENT",
                   ] as const
                 ).map((opt) => (
                   <PillButton
@@ -790,8 +758,8 @@ function LeadsScreenContent() {
               style={{ marginTop: 8 }}
             />
           </View>
+          </KeyboardAvoidingView>
         </BottomDrawer>
-
         {/* Profile Edit Modal */}
         {profileModalVisible && (
           <Modal
@@ -922,16 +890,10 @@ function LeadsScreenContent() {
               bgColor: colors.primary,
             },
             {
-              label: "Mark WON",
+              label: "Mark SENT",
               icon: "checkmark-circle-outline",
-              onPress: () => handleBulkStatusChange("WON"),
+              onPress: () => handleBulkStatusChange("SENT"),
               bgColor: colors.success,
-            },
-            {
-              label: "Mark LOST",
-              icon: "close-circle-outline",
-              onPress: () => handleBulkStatusChange("LOST"),
-              bgColor: colors.warning,
             },
             {
               label: "Delete",

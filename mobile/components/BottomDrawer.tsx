@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   Modal,
   View,
@@ -10,9 +10,12 @@ import {
   StyleSheet,
   Text,
   PanResponder,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../services/theme";
+
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface BottomDrawerProps {
   visible: boolean;
@@ -27,25 +30,27 @@ export const BottomDrawer: React.FC<BottomDrawerProps> = ({
   onClose,
   title,
   children,
-  maxScrollHeight = 420,
+  maxScrollHeight = SCREEN_HEIGHT * 0.70, // Defaults to 70% of screen height
 }) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const slideAnim = useRef(new Animated.Value(400)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const panY      = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       panY.setValue(0);
+      setIsExpanded(false);
       Animated.parallel([
         Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, damping: 18, stiffness: 160 }),
         Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 400, duration: 220, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: SCREEN_HEIGHT, duration: 220, useNativeDriver: true }),
         Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     }
@@ -54,19 +59,43 @@ export const BottomDrawer: React.FC<BottomDrawerProps> = ({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => gs.dy > 5,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 5,
       onPanResponderMove: (_, gs) => {
-        if (gs.dy > 0) panY.setValue(gs.dy);
+        if (gs.dy > 0) {
+          panY.setValue(gs.dy);
+        } else if (!isExpanded && gs.dy < 0) {
+          // Allow slight upward drag resistance
+          panY.setValue(Math.max(gs.dy, -60));
+        }
       },
       onPanResponderRelease: (_, gs) => {
-        if (gs.dy > 80) {
-          onClose();
+        if (isExpanded) {
+          // If already expanded, swiping down collapses it back to normal height
+          if (gs.dy > 50) {
+            setIsExpanded(false);
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+          } else {
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+          }
         } else {
-          Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+          // If not expanded, swiping down closes it; swiping up expands it
+          if (gs.dy > 80) {
+            onClose();
+          } else if (gs.dy < -30) {
+            setIsExpanded(true);
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+          } else {
+            Animated.spring(panY, { toValue: 0, useNativeDriver: true }).start();
+          }
         }
       },
     })
   ).current;
+
+  // Determine current active scroll height limit
+  const activeMaxScrollHeight = isExpanded
+    ? SCREEN_HEIGHT * 0.90 - 100
+    : maxScrollHeight - 100;
 
   return (
     <Modal transparent visible={visible} animationType="none">
@@ -90,6 +119,7 @@ export const BottomDrawer: React.FC<BottomDrawerProps> = ({
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
                 shadowColor: colors.clayShadowDark,
+                maxHeight: isExpanded ? SCREEN_HEIGHT * 0.95 : SCREEN_HEIGHT * 0.75,
               },
             ]}
           >
@@ -118,7 +148,7 @@ export const BottomDrawer: React.FC<BottomDrawerProps> = ({
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              style={{ maxHeight: maxScrollHeight }}
+              style={{ maxHeight: activeMaxScrollHeight }}
             >
               <View style={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20) }}>
                 {children}

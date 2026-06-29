@@ -99,22 +99,24 @@ export default function AuthScreen() {
             </Text>
 
             {/* Server Endpoint URL Configuration */}
-            <View style={[styles.inputGroup, { marginBottom: 20 }]}>
-              <Text
-                style={[styles.inputLabel, { color: colors.textSecondary }]}
-              >
-                Server API Endpoint URL
-              </Text>
-              <TextInput
-                placeholder="e.g. http://192.168.1.50:3000"
-                placeholderTextColor={colors.textMuted}
-                value={inputApiUrl}
-                onChangeText={setInputApiUrl}
-                onBlur={() => store.setApiUrl(inputApiUrl)}
-                autoCapitalize="none"
-                style={glassInputStyle}
-              />
-            </View>
+            {__DEV__ && (
+              <View style={[styles.inputGroup, { marginBottom: 20 }]}>
+                <Text
+                  style={[styles.inputLabel, { color: colors.textSecondary }]}
+                >
+                  Server API Endpoint URL
+                </Text>
+                <TextInput
+                  placeholder="e.g. http://192.168.1.50:3000"
+                  placeholderTextColor={colors.textMuted}
+                  value={inputApiUrl}
+                  onChangeText={setInputApiUrl}
+                  onBlur={() => store.setApiUrl(inputApiUrl)}
+                  autoCapitalize="none"
+                  style={glassInputStyle}
+                />
+              </View>
+            )}
 
             {/* Google Credentials Sign In */}
             <View style={styles.googleContainer}>
@@ -125,6 +127,7 @@ export default function AuthScreen() {
               </Text>
 
               <Button
+                isLoading={loading}
                 label={loading ? "Authenticating..." : "Sign In with Google"}
                 onPress={handleNativeGoogleLogin}
                 icon={loading ? undefined : "logo-google"}
@@ -133,49 +136,54 @@ export default function AuthScreen() {
               />
             </View>
 
-            {/* Separator / Divider */}
-            <View style={styles.separatorContainer}>
-              <View
-                style={[
-                  styles.separatorLine,
-                  { backgroundColor: colors.border },
-                ]}
-              />
-              <Text style={[styles.separatorText, { color: colors.textMuted }]}>
-                OR BYPASS
-              </Text>
-              <View
-                style={[
-                  styles.separatorLine,
-                  { backgroundColor: colors.border },
-                ]}
-              />
-            </View>
+            {/* Separator & Developer Bypass (Dev only) */}
+            {__DEV__ && (
+              <>
+                {/* Separator / Divider */}
+                <View style={styles.separatorContainer}>
+                  <View
+                    style={[
+                      styles.separatorLine,
+                      { backgroundColor: colors.border },
+                    ]}
+                  />
+                  <Text style={[styles.separatorText, { color: colors.textMuted }]}>
+                    OR BYPASS
+                  </Text>
+                  <View
+                    style={[
+                      styles.separatorLine,
+                      { backgroundColor: colors.border },
+                    ]}
+                  />
+                </View>
 
-            {/* Developer Bypass Sign In */}
-            <View style={styles.inputGroup}>
-              <Text
-                style={[styles.inputLabel, { color: colors.textSecondary }]}
-              >
-                Developer Username / Email
-              </Text>
-              <TextInput
-                placeholder="e.g. shubham"
-                placeholderTextColor={colors.textMuted}
-                value={devUsername}
-                onChangeText={setDevUsername}
-                autoCapitalize="none"
-                style={glassInputStyle}
-              />
-            </View>
+                {/* Developer Bypass Sign In */}
+                <View style={styles.inputGroup}>
+                  <Text
+                    style={[styles.inputLabel, { color: colors.textSecondary }]}
+                  >
+                    Developer Username / Email
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. shubham"
+                    placeholderTextColor={colors.textMuted}
+                    value={devUsername}
+                    onChangeText={setDevUsername}
+                    autoCapitalize="none"
+                    style={glassInputStyle}
+                  />
+                </View>
 
-            <Button
-              label={loading ? "Logging in..." : "Developer Login Bypass"}
-              onPress={handleBypassLogin}
-              disabled={loading}
-              variant="primary"
-              style={{ width: "100%", marginTop: 8 }}
-            />
+                <Button
+                  label={loading ? "Logging in..." : "Developer Login Bypass"}
+                  onPress={handleBypassLogin}
+                  disabled={loading}
+                  variant="primary"
+                  style={{ width: "100%", marginTop: 8 }}
+                />
+              </>
+            )}
           </View>
         </ScrollView>
         <CustomAlert

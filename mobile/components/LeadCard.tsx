@@ -25,25 +25,13 @@ export const LeadCard: React.FC<LeadCardProps> = React.memo(({
   const { colors } = useTheme();
 
   const statusColor =
-    lead.status === "WON"
+    lead.status === "SENT"
       ? colors.success
-      : lead.status === "LOST"
-      ? colors.danger
-      : lead.status === "QUALIFIED"
-      ? colors.accent
-      : lead.status === "CONTACTED"
-      ? colors.warning
       : colors.primary;
 
   const statusBg =
-    lead.status === "WON"
+    lead.status === "SENT"
       ? colors.successSoft
-      : lead.status === "LOST"
-      ? colors.dangerSoft
-      : lead.status === "QUALIFIED"
-      ? colors.accentSoft
-      : lead.status === "CONTACTED"
-      ? colors.warningSoft
       : colors.primarySoft;
 
   return (

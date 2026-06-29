@@ -180,11 +180,17 @@ export const migrationStatements = [
   `CREATE TABLE IF NOT EXISTS \`campaign_recipients\` (
 \t\`id\` text PRIMARY KEY NOT NULL,
 \t\`campaign_id\` text NOT NULL,
-\t\`contact_id\` text NOT NULL,
+\t\`phone\` text NOT NULL,
+\t\`name\` text,
 \t\`status\` text DEFAULT 'pending' NOT NULL,
 \t\`attempted_at\` integer,
 \t\`completed_at\` integer,
-\tFOREIGN KEY (\`campaign_id\`) REFERENCES \`campaigns\`(\`id\`) ON UPDATE no action ON DELETE no action,
-\tFOREIGN KEY (\`contact_id\`) REFERENCES \`contacts\`(\`id\`) ON UPDATE no action ON DELETE no action
-  );`
+\tFOREIGN KEY (\`campaign_id\`) REFERENCES \`campaigns\`(\`id\`) ON UPDATE no action ON DELETE no action
+  );`,
+
+  // 16. Indexes
+  `CREATE INDEX IF NOT EXISTS \`leads_status_idx\` ON \`leads\` (\`status\`);`,
+  `CREATE INDEX IF NOT EXISTS \`leads_phone_idx\` ON \`leads\` (\`phone\`);`,
+  `CREATE INDEX IF NOT EXISTS \`campaign_recipients_phone_idx\` ON \`campaign_recipients\` (\`phone\`);`,
+  `CREATE INDEX IF NOT EXISTS \`campaign_recipients_campaign_id_idx\` ON \`campaign_recipients\` (\`campaign_id\`);`
 ];

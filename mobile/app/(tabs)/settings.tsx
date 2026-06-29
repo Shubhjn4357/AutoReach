@@ -12,8 +12,8 @@ import {
   Switch,
   Modal,
   Image,
-  Clipboard,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../services/theme";
 import { useAppStore } from "../../services/store";
@@ -22,7 +22,7 @@ import { useSync } from "../../hook/useSync";
 import { useCustomAlert } from "../../hook/useCustomAlert";
 import { removeSecureItem, saveSecureItem, getSecureItem } from "../../services/store";
 
-import { CustomAlert, AlertButton } from "../../components/CustomAlert";
+import { CustomAlert } from "../../components/CustomAlert";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 
@@ -70,7 +70,7 @@ function SettingsScreenContent() {
   // Controls lists from API
   const [pluginsList, setPluginsList] = useState<Array<{ id: string; name: string; description: string; status: string }>>([]);
   const [webhooksList, setWebhooksList] = useState<Array<{ id: string; url: string; events: string[]; active: boolean }>>([]);
-  const [apiKeysList, setApiKeysList] = useState<Array<{ id: string; name: string; keyPrefix: string; usageCount: number }>>([]);
+  const [apiKeysList, setApiKeysList] = useState<Array<{ id: string; name: string; keyPrefix: string; apiKey?: string; usageCount: number }>>([]);
 
   // Expandable sections toggles
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
@@ -92,7 +92,7 @@ function SettingsScreenContent() {
   const { alertConfig, showCustomAlert, hideCustomAlert } = useCustomAlert();
 
   // Gemini state variables
-  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [_geminiApiKey, setGeminiApiKey] = useState("");
   const [tempGeminiKey, setTempGeminiKey] = useState("");
   const [geminiConnected, setGeminiConnected] = useState(false);
   const [geminiTesting, setGeminiTesting] = useState(false);
@@ -437,7 +437,7 @@ function SettingsScreenContent() {
         setApiKeyModalVisible(false);
         setNewKeyName("");
         fetchControlsData();
-        Clipboard.setString(keyData.apiKey);
+        await Clipboard.setStringAsync(keyData.apiKey);
         hapticSuccess();
         showCustomAlert("API Key Generated", `The API key has been copied to your clipboard automatically. Keep this key secure:\n\n${keyData.apiKey}`, "success");
       }
@@ -711,20 +711,22 @@ function SettingsScreenContent() {
                 </Text>
               </View>
 
-              <View style={[styles.row, { flexDirection: "column", alignItems: "stretch", gap: 6, marginVertical: 8, borderBottomWidth: 0 }]}>
-                <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
-                  Server API Endpoint URL
-                </Text>
-                <TextInput
-                  value={inputApiUrl}
-                  onChangeText={setInputApiUrl}
-                  onBlur={() => store.setApiUrl(inputApiUrl)}
-                  placeholder="e.g. http://192.168.1.50:3000"
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  style={[glassInputStyle, {fontSize: 12, paddingHorizontal: 12, borderRadius: 10 }]}
-                />
-              </View>
+              {__DEV__ && (
+                <View style={[styles.row, { flexDirection: "column", alignItems: "stretch", gap: 6, marginVertical: 8, borderBottomWidth: 0 }]}>
+                  <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>
+                    Server API Endpoint URL
+                  </Text>
+                  <TextInput
+                    value={inputApiUrl}
+                    onChangeText={setInputApiUrl}
+                    onBlur={() => store.setApiUrl(inputApiUrl)}
+                    placeholder="e.g. http://192.168.1.50:3000"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    style={[glassInputStyle, {fontSize: 12, paddingHorizontal: 12, borderRadius: 10 }]}
+                  />
+                </View>
+              )}
 
               <Pressable
                 onPress={() => {
@@ -996,10 +998,10 @@ function SettingsScreenContent() {
                       </View>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <Pressable
-                          onPress={() => {
-                            Clipboard.setString(ak.keyPrefix);
+                          onPress={async () => {
+                            await Clipboard.setStringAsync(ak.apiKey || ak.keyPrefix);
                             hapticSuccess();
-                            showCustomAlert("Copied", "API Key prefix copied to clipboard.", "success");
+                            showCustomAlert("Copied", "API Key copied to clipboard.", "success");
                           }}
                           style={{ padding: 4 }}
                         >

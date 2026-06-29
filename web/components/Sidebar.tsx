@@ -1,6 +1,5 @@
 import {
   Sparkles,
-  Users,
   LayoutDashboard,
   Radio,
   MessageSquare,
@@ -34,7 +33,6 @@ interface SidebarProps {
     | "logs"
     | "settings";
   setActiveTab: (tab: SidebarProps["activeTab"]) => void;
-  leadsCount: number;
   user: { name?: string } | null;
   theme: "dark" | "light";
   toggleThemeMode: () => void;
@@ -46,7 +44,6 @@ interface SidebarProps {
 export default function Sidebar({
   activeTab,
   setActiveTab,
-  leadsCount,
   user,
   theme,
   toggleThemeMode,
@@ -60,7 +57,6 @@ export default function Sidebar({
     icon: React.ComponentType<{ size?: number; className?: string }>;
     badge?: number;
   }> = [
-    { id: "leads", label: "Leads & CRM", icon: Users, badge: leadsCount },
     { id: "dashboard", label: "System Overview", icon: LayoutDashboard },
     { id: "sessions", label: "Node Manager", icon: Radio },
     { id: "chats", label: "Conversations", icon: MessageSquare },

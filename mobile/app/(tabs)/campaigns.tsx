@@ -291,22 +291,35 @@ function CampaignsScreenContent() {
 
     setCampaignLoading(true);
     try {
+      let uploadUrl: string | null = null;
+      if (campaignImageUri) {
+        const { uploadImageToGoogleDrive } = await import("../../services/drive");
+        const filename = `campaign_img_${Date.now()}.jpg`;
+        uploadUrl = await uploadImageToGoogleDrive(campaignImageUri, filename);
+      }
+
       const campaignId = `camp_${Math.random().toString(36).substring(2, 9)}`;
       
       const newCampaign = {
         id: campaignId,
         name: newCampaignName.trim(),
         messageTemplateId: selectedTemplateId,
+        messageBody: activeTemplate ? activeTemplate.body : "",
         status: "scheduled",
-        mediaUrl: campaignImageUri || null,
+        mediaUrl: uploadUrl || null,
         scheduledAt: scheduledDateTime.getTime(),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
 
-      const recipientIds = targetLeads.map((l) => l.id);
+      const recipients = targetLeads
+        .filter((l) => l.phone)
+        .map((l) => ({
+          phone: l.phone!,
+          name: l.name,
+        }));
 
-      await createLocalCampaign(newCampaign, recipientIds);
+      await createLocalCampaign(newCampaign, recipients);
 
       hapticSuccess();
       showCustomAlert(
@@ -510,7 +523,7 @@ function CampaignsScreenContent() {
                 Target CRM Stage
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: "row", marginBottom: 12 }}>
-                {["ALL", "NEW", "CONTACTED", "QUALIFIED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"].map((stage) => {
+                {["ALL", "NEW", "SENT"].map((stage) => {
                   const isSelected = targetStage === stage;
                   return (
                     <Pressable

@@ -3,6 +3,7 @@ import {
   getQueuedOperations,
   dequeueSyncOperation,
   incrementSyncAttempt,
+  vacuumDatabase,
 } from "./db";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
@@ -24,9 +25,10 @@ export async function executeSyncCycle(): Promise<{
       return { success: false, syncedCount: 0 };
     }
 
-    // Filter queue items using exponential backoff: delay = 2^attempts * 1000 ms
+    // Filter queue items to ONLY include campaigns, using exponential backoff
     const now = Date.now();
     const eligibleOperations = allQueue.filter((item) => {
+      if (item.table !== "campaigns") return false;
       const attempts = item.attempts || 0;
       if (attempts === 0) return true;
       const delay = Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS);
@@ -70,6 +72,12 @@ export async function executeSyncCycle(): Promise<{
             await incrementSyncAttempt(op.id);
           }
         }
+        
+        // Trigger background VACUUM to reclaim disk space after changes
+        vacuumDatabase().catch((err) => {
+          console.warn("Periodic SQLite vacuum failed:", err);
+        });
+
         return { success: true, syncedCount: syncedIds.length };
       }
 

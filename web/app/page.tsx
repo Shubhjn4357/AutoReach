@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
-import LeadsView from "../components/LeadsView";
 import SettingsView from "../components/SettingsView";
 import DashboardView from "../components/openwa/DashboardView";
 import SessionsView from "../components/openwa/SessionsView";
@@ -14,9 +13,7 @@ import MessageTesterView from "../components/openwa/MessageTesterView";
 import InfrastructureView from "../components/openwa/InfrastructureView";
 import PluginsView from "../components/openwa/PluginsView";
 import LogsView from "../components/openwa/LogsView";
-import { AddLeadModal, EditLeadModal } from "../components/Modals";
 
-import api, { Lead, LeadStatus } from "./lib/api";
 import { LogIn } from "lucide-react";
 
 export default function RootPage() {
@@ -38,45 +35,9 @@ export default function RootPage() {
     | "plugins"
     | "logs"
     | "settings"
-  >("leads");
+  >("dashboard");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [leads, setLeads] = useState<Lead[]>([]);
-
-  // CRM Search, filters, modals
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LeadStatus | "ALL">("ALL");
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-
-  // Add lead form state
-  const [addForm, setAddForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    value: "",
-    status: "NEW" as Lead["status"],
-    notes: "",
-  });
-
-  // Edit lead form state
-  const [editForm, setEditForm] = useState({
-    id: "",
-    name: "",
-    email: "",
-    phone: "",
-    value: "",
-    status: "NEW" as Lead["status"],
-    notes: "",
-  });
-
-  // AI & Message Dispatch States
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<{ score?: number; risk?: string; suggestion?: string; grade?: string; summary?: string; suggestedAction?: string; proposedQuickReply?: string } | null>(null);
-  const [dispatchLoading, setDispatchLoading] = useState(false);
-  const [generateLoading, setGenerateLoading] = useState(false);
-
   // Profile
   const [profileName, setProfileName] = useState("Console Manager");
 
@@ -108,7 +69,6 @@ export default function RootPage() {
         window.sessionStorage.setItem("autoreach_api_key", apiKeyInput);
       }
       setIsAuthenticated(true);
-      fetchLeadsAndTasks();
     } catch {
       setLoginError("Invalid API Key");
     } finally {
@@ -116,20 +76,7 @@ export default function RootPage() {
     }
   };
 
-  const fetchLeadsAndTasks = async () => {
-    try {
-      const leadsRes = await api.crm.listLeads();
-      setLeads(leadsRes);
-    } catch (err) {
-      console.error("Failed to load CRM data:", err);
-    }
-  };
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchLeadsAndTasks();
-    }
-  }, [isAuthenticated]);
 
   const toggleThemeMode = () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
@@ -151,97 +98,7 @@ export default function RootPage() {
     setApiKeyInput("");
   };
 
-  // Leads CRUD
-  const handleAddLeadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.crm.createLead({
-        name: addForm.name,
-        email: addForm.email || null,
-        phone: addForm.phone || null,
-        status: addForm.status,
-        value: Number(addForm.value) || 0,
-        notes: addForm.notes || null,
-      });
-      setAddModalOpen(false);
-      setAddForm({ name: "", email: "", phone: "", value: "", status: "NEW", notes: "" });
-      fetchLeadsAndTasks();
-    } catch {
-      alert("Failed to add lead");
-    }
-  };
 
-  const handleEditLeadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.crm.updateLead(editForm.id, {
-        name: editForm.name,
-        email: editForm.email || null,
-        phone: editForm.phone || null,
-        status: editForm.status,
-        value: Number(editForm.value) || 0,
-        notes: editForm.notes || null,
-      });
-      setEditModalOpen(false);
-      fetchLeadsAndTasks();
-    } catch {
-      alert("Failed to update lead");
-    }
-  };
-
-  const handleDeleteLead = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this lead?")) return;
-    try {
-      await api.crm.deleteLead(id);
-      fetchLeadsAndTasks();
-    } catch {
-      alert("Failed to delete lead");
-    }
-  };
-
-  // AI & Contract & Message Stubs
-  const runAiAudit = async (lead: Lead) => {
-    setAiLoading(true);
-    setTimeout(() => {
-      setAiResult({
-        score: 85,
-        risk: "Low",
-        suggestion: `Lead "${lead.name}" exhibits strong buying signals. Recommend active follow-up using the "lead-followup" template.`,
-        grade: "A",
-        summary: `Lead "${lead.name}" exhibits strong buying signals.`,
-        suggestedAction: "Recommend active follow-up using the 'lead-followup' template.",
-        proposedQuickReply: `Hello ${lead.name}, let's schedule a brief follow-up!`,
-      });
-      setAiLoading(false);
-    }, 1500);
-  };
-
-  const handleMessageDispatch = async (channel: "whatsapp" | "sms", text: string) => {
-    if (!selectedLeadId) return;
-    const lead = leads.find((l) => l.id === selectedLeadId);
-    if (!lead || !lead.phone) {
-      alert("Selected lead does not have a valid phone number");
-      return;
-    }
-    setDispatchLoading(true);
-    try {
-      const cleanPhone = lead.phone.replace(/\D/g, "");
-      await api.whatsapp.send(cleanPhone, text);
-      alert("WhatsApp message dispatched successfully!");
-    } catch (err: unknown) {
-      alert("Error: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setDispatchLoading(false);
-    }
-  };
-
-  const handleGenerateContract = async (lead: Lead) => {
-    setGenerateLoading(true);
-    setTimeout(() => {
-      alert(`Contract document generated successfully for ${lead.name}`);
-      setGenerateLoading(false);
-    }, 1500);
-  };
 
   const handleUpdateProfile = () => {
     alert("Profile display name saved!");
@@ -282,58 +139,7 @@ export default function RootPage() {
         );
       case "leads":
       default:
-        // Filter leads
-        const filteredLeads = leads.filter((lead) => {
-          const matchSearch =
-            lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (lead.phone && lead.phone.includes(searchQuery)) ||
-            (lead.email && lead.email.toLowerCase().includes(searchQuery.toLowerCase()));
-          const matchStatus = statusFilter === "ALL" || lead.status === statusFilter;
-          return matchSearch && matchStatus;
-        });
-
-        // Compute metrics
-        const totalValue = filteredLeads.reduce((acc, curr) => acc + (curr.value || 0), 0);
-        const winCount = filteredLeads.filter((l) => l.status === "WON").length;
-        const winRate = filteredLeads.length > 0 ? (winCount / filteredLeads.length) * 100 : 0;
-
-        return (
-          <LeadsView
-            leads={filteredLeads}
-            metrics={{ totalValue, winRate }}
-            driveFiles={[]}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            selectedLeadId={selectedLeadId}
-            setSelectedLeadId={setSelectedLeadId}
-            setAddModalOpen={setAddModalOpen}
-            openEditModal={(lead) => {
-              setEditForm({
-                id: lead.id,
-                name: lead.name,
-                email: lead.email || "",
-                phone: lead.phone || "",
-                value: String(lead.value || ""),
-                status: lead.status as Lead["status"],
-                notes: lead.notes || "",
-              });
-              setEditModalOpen(true);
-            }}
-            handleDeleteLead={handleDeleteLead}
-            aiLoading={aiLoading}
-            aiResult={aiResult}
-            setAiResult={setAiResult}
-            runAiAudit={runAiAudit}
-            dispatchLoading={dispatchLoading}
-            handleMessageDispatch={handleMessageDispatch}
-            generateLoading={generateLoading}
-            handleGenerateContract={handleGenerateContract}
-            setActiveTab={setActiveTab}
-            user={{ name: profileName }}
-          />
-        );
+        return <DashboardView />;
     }
   };
 
@@ -380,7 +186,6 @@ export default function RootPage() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        leadsCount={leads.length}
         user={{ name: profileName }}
         theme={theme}
         toggleThemeMode={toggleThemeMode}
@@ -393,22 +198,7 @@ export default function RootPage() {
         {renderView()}
       </main>
 
-      {/* CRM Opportunity Modals */}
-      <AddLeadModal
-        isOpen={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
-        onSubmit={handleAddLeadSubmit}
-        form={addForm}
-        setForm={setAddForm}
-      />
 
-      <EditLeadModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        onSubmit={handleEditLeadSubmit}
-        form={editForm}
-        setForm={setEditForm}
-      />
     </div>
   );
 }

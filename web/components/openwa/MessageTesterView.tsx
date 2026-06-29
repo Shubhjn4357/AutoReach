@@ -21,25 +21,53 @@ export default function MessageTesterView() {
       setError(null);
       setSuccess(null);
 
-      // Clean phone format
-      const cleanedPhone = phone.trim().replace(/\D/g, "");
+      // Support bulk sending by splitting on comma or newline
+      const phoneList = phone
+        .split(/[,\n]/)
+        .map((p) => p.trim().replace(/\D/g, ""))
+        .filter((p) => p.length > 0);
 
-      const res = await api.whatsapp.send(
-        cleanedPhone,
-        text.trim(),
-        imageUrl.trim() || undefined,
-        imageUrl.trim() ? "Test Image Attachment" : undefined
-      );
+      if (phoneList.length === 0) {
+        setError("No valid phone numbers provided");
+        setLoading(false);
+        return;
+      }
 
-      if (res.success) {
-        setSuccess(`Message dispatched successfully! ID: ${res.messageId || "N/A"}`);
+      let successCount = 0;
+      let failCount = 0;
+      const failures: string[] = [];
+
+      for (const singlePhone of phoneList) {
+        try {
+          const res = await api.whatsapp.send(
+            singlePhone,
+            text.trim(),
+            imageUrl.trim() || undefined,
+            imageUrl.trim() ? "Test Image Attachment" : undefined
+          );
+          if (res.success) {
+            successCount++;
+          } else {
+            failCount++;
+            failures.push(singlePhone);
+          }
+        } catch {
+          failCount++;
+          failures.push(singlePhone);
+        }
+      }
+
+      if (failCount === 0) {
+        setSuccess(`Successfully sent to all ${successCount} recipient(s)!`);
         setText("");
         setImageUrl("");
       } else {
-        setError("Message dispatch failed");
+        setError(
+          `Dispatched to ${successCount} numbers. Failed for ${failCount} numbers: ${failures.join(", ")}`
+        );
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to dispatch test message");
+      setError(err instanceof Error ? err.message : "Failed to execute bulk test dispatch");
     } finally {
       setLoading(false);
     }
@@ -72,15 +100,15 @@ export default function MessageTesterView() {
       <form onSubmit={handleTestSend} className="glass-card p-6 rounded-[var(--radius-lg)] space-y-6 max-w-xl">
         <div className="space-y-2">
           <label className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-            Recipient Phone Number (with Country Code)
+            Recipient Phone Number(s) (with Country Code, split by comma or newline)
           </label>
-          <input
-            type="tel"
+          <textarea
             required
-            placeholder="e.g. 14155552671"
+            rows={2}
+            placeholder="e.g. 14155552671, 14155552672"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-md)] px-4 py-2.5 text-sm text-white placeholder-[var(--color-text-muted)] focus:outline-none focus:border-indigo-500 transition-all font-mono"
+            className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius-md)] px-4 py-2.5 text-sm text-white placeholder-[var(--color-text-muted)] focus:outline-none focus:border-indigo-500 transition-all font-mono resize-none"
           />
         </div>
 

@@ -56,10 +56,8 @@ export async function analyzeLeadProfile(
   if (lead.value > 15000) score += 25;
   else if (lead.value > 5000) score += 15;
 
-  if (lead.status === "QUALIFIED") score += 30;
-  else if (lead.status === "CONTACTED") score += 15;
-  else if (lead.status === "WON") score = 100;
-  else if (lead.status === "LOST") score = 0;
+  if (lead.status === "SENT") score = 100;
+  else if (lead.status === "NEW") score = 50;
 
   if (lead.email && lead.phone) score += 10;
   score = Math.min(Math.max(score, 0), 100);

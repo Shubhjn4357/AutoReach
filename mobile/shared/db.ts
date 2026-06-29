@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(),
@@ -30,7 +30,10 @@ export const leads = sqliteTable("leads", {
   notes: text("notes"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
-});
+}, (table) => ({
+  leadsStatusIdx: index("leads_status_idx").on(table.status),
+  leadsPhoneIdx: index("leads_phone_idx").on(table.phone),
+}));
 
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
@@ -110,6 +113,7 @@ export const apiKeys = sqliteTable("api_keys", {
   name: text("name").notNull(),
   keyPrefix: text("key_prefix").notNull(),
   apiKeyHash: text("api_key_hash").notNull(),
+  apiKey: text("api_key"),
   role: text("role").default("operator").notNull(), // 'admin' | 'operator' | 'viewer'
   isActive: integer("is_active").default(1).notNull(), // 0 or 1
   usageCount: integer("usage_count").default(0).notNull(),
@@ -191,6 +195,7 @@ export const campaigns = sqliteTable("campaigns", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   messageTemplateId: text("message_template_id").references(() => messageTemplates.id),
+  messageBody: text("message_body"),
   status: text("status").notNull().default("draft"),
   mediaUrl: text("media_url"),
   scheduledAt: integer("scheduled_at"),
@@ -205,10 +210,12 @@ export const campaignRecipients = sqliteTable("campaign_recipients", {
   campaignId: text("campaign_id")
     .references(() => campaigns.id)
     .notNull(),
-  contactId: text("contact_id")
-    .references(() => contacts.id)
-    .notNull(),
+  phone: text("phone").notNull(),
+  name: text("name"),
   status: text("status").notNull().default("pending"),
   attemptedAt: integer("attempted_at"),
   completedAt: integer("completed_at"),
-});
+}, (table) => ({
+  campaignRecipientsCampaignIdIdx: index("campaign_recipients_campaign_id_idx").on(table.campaignId),
+  campaignRecipientsPhoneIdx: index("campaign_recipients_phone_idx").on(table.phone),
+}));

@@ -88,6 +88,10 @@ export async function verifyGoogleToken(idToken: string): Promise<{
   name: string;
 } | null> {
   if (idToken.startsWith("mock_")) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn("Google OAuth bypass attempted in production env. Rejected.");
+      return null;
+    }
     const email = idToken.replace("mock_", "") + "@example.com";
     return {
       googleId: `g_${idToken}`,

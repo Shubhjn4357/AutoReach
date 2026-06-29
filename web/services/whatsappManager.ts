@@ -363,6 +363,13 @@ export class WhatsAppManager {
   }
 
   /**
+   * Check if a specific WhatsApp session is active and connected.
+   */
+  public isSessionConnected(sessionId: string): boolean {
+    return this.sockets.has(sessionId);
+  }
+
+  /**
    * Send a Text message
    */
   public async sendTextMessage(sessionId: string, phone: string, text: string) {

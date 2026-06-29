@@ -17,25 +17,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   const { colors } = useTheme();
 
   const statusColor =
-    status === "WON"
+    status === "SENT"
       ? colors.success
-      : status === "LOST"
-      ? colors.danger
-      : status === "QUALIFIED"
-      ? colors.accent
-      : status === "CONTACTED"
-      ? colors.warning
       : colors.primary;
 
   const statusBg =
-    status === "WON"
+    status === "SENT"
       ? colors.successSoft
-      : status === "LOST"
-      ? colors.dangerSoft
-      : status === "QUALIFIED"
-      ? colors.accentSoft
-      : status === "CONTACTED"
-      ? colors.warningSoft
       : colors.primarySoft;
 
   const isSm = size === "sm";

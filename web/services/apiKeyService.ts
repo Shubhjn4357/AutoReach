@@ -6,29 +6,7 @@ import { auditService } from "./auditService";
 
 export const apiKeyService = {
   seedDefaultKey: async () => {
-    try {
-      const existingKeys = await db.select().from(apiKeys).limit(1);
-      if (existingKeys.length === 0) {
-        const devKey = "owa_devkey_1234567890abcdef";
-        const prefix = devKey.substring(0, 8);
-        const hash = crypto.createHash("sha256").update(devKey).digest("hex");
-        await db.insert(apiKeys).values({
-          id: "key_default_developer",
-          name: "Default Developer Key",
-          keyPrefix: prefix,
-          apiKeyHash: hash,
-          role: "admin",
-          isActive: 1,
-          usageCount: 0,
-          createdAt: Date.now(),
-        });
-        console.log("=========================================");
-        console.log(`> Seeded default developer API key: ${devKey}`);
-        console.log("=========================================");
-      }
-    } catch (err) {
-      console.error("Failed to seed default developer API key:", err);
-    }
+    // Hardcoded developer key seeding removed for security
   },
 
   validateKey: async (key: string) => {
@@ -64,6 +42,7 @@ export const apiKeyService = {
       id: k.id,
       name: k.name,
       keyPrefix: k.keyPrefix,
+      apiKey: k.apiKey,
       role: k.role,
       isActive: k.isActive === 1,
       usageCount: k.usageCount,
@@ -84,6 +63,7 @@ export const apiKeyService = {
       name: name || "New API Key",
       keyPrefix: prefix,
       apiKeyHash: hash,
+      apiKey: rawKey,
       role: role || "operator",
       isActive: 1,
       usageCount: 0,

@@ -4,14 +4,8 @@ export function getConversionProbability(status: LeadStatus): number {
   switch (status) {
     case "NEW":
       return 10;
-    case "CONTACTED":
-      return 30;
-    case "QUALIFIED":
-      return 60;
-    case "WON":
+    case "SENT":
       return 100;
-    case "LOST":
-      return 0;
     default:
       return 0;
   }
@@ -28,10 +22,8 @@ export function calculatePipelineMetrics(leads: Lead[]) {
     totalValue += lead.value;
     weightedValue += lead.value * (getConversionProbability(lead.status) / 100);
 
-    if (lead.status === "WON") {
+    if (lead.status === "SENT") {
       wonCount++;
-    } else if (lead.status === "LOST") {
-      lostCount++;
     } else {
       activeCount++;
     }
@@ -53,14 +45,8 @@ export function recommendNextStep(lead: Lead): string {
   if (lead.status === "NEW") {
     return "Schedule introductory outreach call or send WhatsApp introduction.";
   }
-  if (lead.status === "CONTACTED") {
-    return "Qualify budget and requirements; prepare custom product overview.";
-  }
-  if (lead.status === "QUALIFIED") {
-    return "Draft final proposal and request agreement signature.";
-  }
-  if (lead.status === "WON") {
-    return "Create onboarding task checklist and request Drive uploads.";
+  if (lead.status === "SENT") {
+    return "Follow up on the sent message and prepare onboarding checklist.";
   }
   return "Archive lead profile and schedule retrospective review.";
 }

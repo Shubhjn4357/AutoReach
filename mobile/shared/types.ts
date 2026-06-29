@@ -1,4 +1,4 @@
-export type LeadStatus = "NEW" | "CONTACTED" | "QUALIFIED" | "LOST" | "WON";
+export type LeadStatus = "NEW" | "SENT";
 export type TaskStatus = "PENDING" | "COMPLETED";
 
 export interface User {

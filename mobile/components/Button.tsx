@@ -1,11 +1,11 @@
 import React from "react";
-import { Pressable, Text, StyleSheet, ViewStyle } from "react-native";
+import { Pressable, Text, StyleSheet, ViewStyle, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../services/theme";
 import { hapticLight } from "../services/haptics";
 
 type BtnVariant = "primary" | "secondary" | "danger" | "success" | "ghost";
-type BtnSize   = "sm" | "md" | "lg";
+type BtnSize    = "sm" | "md" | "lg";
 
 interface ButtonProps {
   label: string;
@@ -14,6 +14,7 @@ interface ButtonProps {
   size?: BtnSize;
   disabled?: boolean;
   fullWidth?: boolean;
+  isLoading?: boolean;
   style?: ViewStyle;
   icon?: keyof typeof Ionicons.glyphMap;
   iconPosition?: "left" | "right";
@@ -26,6 +27,7 @@ export const Button: React.FC<ButtonProps> = ({
   size = "md",
   disabled = false,
   fullWidth = false,
+  isLoading = false,
   style,
   icon,
   iconPosition = "left",
@@ -87,24 +89,30 @@ export const Button: React.FC<ButtonProps> = ({
         style,
       ]}
     >
-      {icon && (
-        <Ionicons
-          name={icon}
-          size={iconSizeMap[size]}
-          color={textColorMap[variant]}
-          style={iconPosition === "right" ? { marginLeft: 6 } : { marginRight: 6 }}
-        />
+      {isLoading ? (
+        <ActivityIndicator color={textColorMap[variant]} />
+      ) : (
+        <>
+          {icon && (
+            <Ionicons
+              name={icon}
+              size={iconSizeMap[size]}
+              color={textColorMap[variant]}
+              style={iconPosition === "right" ? { marginLeft: 6 } : { marginRight: 6 }}
+            />
+          )}
+          <Text
+            style={{
+              color: textColorMap[variant],
+              fontSize: fontMap[size],
+              fontWeight: "700",
+              letterSpacing: 0.2,
+            }}
+          >
+            {label}
+          </Text>
+        </>
       )}
-      <Text
-        style={{
-          color: textColorMap[variant],
-          fontSize: fontMap[size],
-          fontWeight: "700",
-          letterSpacing: 0.2,
-        }}
-      >
-        {label}
-      </Text>
     </Pressable>
   );
 };

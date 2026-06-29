@@ -20,6 +20,7 @@ import {
   updateLocalLead,
   deleteLocalLead,
   logSentMessage,
+  getContactCampaignHistory,
 } from "../../services/db";
 import { Lead, LeadStatus } from "../../shared/types";
 import { recommendNextStep } from "../../shared/crm";
@@ -74,6 +75,12 @@ function ContactDetailScreenContent() {
     queryKey: ["lead", id],
     queryFn: () => getLocalLead(id),
     enabled: isTransitionFinished && !!id,
+  });
+
+  const { data: historyData } = useQuery({
+    queryKey: ["leadHistory", lead?.phone],
+    queryFn: () => getContactCampaignHistory(lead?.phone || ""),
+    enabled: !!lead?.phone,
   });
 
   // Modal & Form States
@@ -201,9 +208,8 @@ function ContactDetailScreenContent() {
       try {
         const action = recommendNextStep(lead);
         let score = 50;
-        if (lead.status === "WON") score = 100;
-        else if (lead.status === "QUALIFIED") score = 80;
-        else if (lead.status === "CONTACTED") score = 65;
+        if (lead.status === "SENT") score = 100;
+        else if (lead.status === "NEW") score = 60;
 
         const grade = score >= 80 ? "A" : score >= 65 ? "B" : "C";
         const summary = `Lead status is ${lead.status.toLowerCase()}.`;
@@ -423,29 +429,19 @@ function ContactDetailScreenContent() {
               </View>
             </View>
 
-            <View style={styles.profileActions}>
-              <Pressable
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+              <Button
+                label="Edit Details"
                 onPress={() => setEditModalVisible(true)}
-                style={[
-                  styles.editProfileBtn,
-                  {
-                    borderColor: colors.border,
-                    borderWidth: 1,
-                    backgroundColor: "transparent",
-                  },
-                ]}
-              >
-                <Ionicons name="create-outline" size={16} color={colors.text} />
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "bold",
-                    fontSize: 13,
-                  }}
-                >
-                  Edit Details
-                </Text>
-              </Pressable>
+                variant="primary"
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Delete Contact"
+                onPress={handleDeleteLead}
+                variant="danger"
+                style={{ flex: 1 }}
+              />
             </View>
           </View>
 
@@ -641,6 +637,121 @@ function ContactDetailScreenContent() {
               </Text>
             )}
           </View>
+
+          {/* Outbound Campaign & Sent Logs History */}
+          <View
+            style={[
+              glassStyle,
+              styles.profileCard,
+              { backgroundColor: colors.surface },
+            ]}
+          >
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "bold",
+                color: colors.text,
+                marginBottom: 12,
+              }}
+            >
+              Campaign History & Sent Logs
+            </Text>
+
+            {historyData?.campaignHistory && historyData.campaignHistory.length > 0 ? (
+              <View style={{ gap: 10 }}>
+                {historyData.campaignHistory.map((item, idx) => (
+                  <View
+                    key={idx}
+                    style={{
+                      padding: 10,
+                      borderRadius: 10,
+                      backgroundColor: colors.bg,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ fontWeight: "bold", fontSize: 13, color: colors.text, flex: 1 }} numberOfLines={1}>
+                        {item.campaignName}
+                      </Text>
+                      <StatusBadge status={item.status.toUpperCase() as LeadStatus} />
+                    </View>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
+                      Scheduled: {item.scheduledAt ? new Date(item.scheduledAt).toLocaleString() : "N/A"}
+                    </Text>
+                    {item.completedAt && (
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                        Completed: {new Date(item.completedAt).toLocaleString()}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  fontStyle: "italic",
+                  textAlign: "center",
+                  paddingVertical: 12,
+                }}
+              >
+                No campaign logs registered for this contact.
+              </Text>
+            )}
+
+            {historyData?.directLogs && historyData.directLogs.length > 0 && (
+              <View style={{ marginTop: 16 }}>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "bold",
+                    color: colors.text,
+                    marginBottom: 8,
+                  }}
+                >
+                  Direct Message Opens
+                </Text>
+                <View style={{ gap: 8 }}>
+                  {historyData.directLogs.map((log) => (
+                    <View
+                      key={log.id}
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        paddingVertical: 6,
+                        borderBottomWidth: 1,
+                        borderBottomColor: colors.border,
+                      }}
+                    >
+                      <View>
+                        <Text style={{ fontSize: 12, color: colors.text, fontWeight: "500" }}>
+                          {log.channel.toUpperCase()} Send
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.textSecondary }}>
+                          {new Date(log.timestamp).toLocaleString()}
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "600",
+                          color:
+                            log.status === "DIRECT_OPEN" || log.status === "BULK_DIRECT_OPEN"
+                              ? colors.success
+                              : colors.warning,
+                        }}
+                      >
+                        {log.status}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
         </ScrollView>
 
         {/* Edit Contact Modal */}
@@ -664,7 +775,7 @@ function ContactDetailScreenContent() {
               <SectionLabel label="Status" />
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {(
-                  ["NEW", "CONTACTED", "QUALIFIED", "LOST", "WON"] as const
+                  ["NEW", "SENT"] as const
                 ).map((opt) => (
                   <PillButton
                     key={opt}

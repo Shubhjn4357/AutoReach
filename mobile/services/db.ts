@@ -144,13 +144,6 @@ export async function createLocalLead(lead: Lead) {
     createdAt: typeof lead.createdAt === "number" ? lead.createdAt : Date.now(),
     updatedAt: typeof lead.updatedAt === "number" ? lead.updatedAt : Date.now(),
   });
-
-  await enqueueSyncOperation(
-    "leads",
-    "CREATE",
-    lead.id,
-    lead as unknown as Record<string, unknown>,
-  );
 }
 
 export async function updateLocalLead(lead: Lead) {
@@ -166,19 +159,11 @@ export async function updateLocalLead(lead: Lead) {
       updatedAt: Date.now(),
     })
     .where(eq(schema.leads.id, lead.id));
-
-  await enqueueSyncOperation(
-    "leads",
-    "UPDATE",
-    lead.id,
-    lead as unknown as Record<string, unknown>,
-  );
 }
 
 export async function deleteLocalLead(id: string) {
   const db = getDrizzle();
   await db.delete(schema.leads).where(eq(schema.leads.id, id));
-  await enqueueSyncOperation("leads", "DELETE", id, { id });
 }
 
 // Tasks Helpers
@@ -223,13 +208,6 @@ export async function createLocalTask(task: Task) {
     dueDate: bindDueDate,
     createdAt: bindCreatedAt,
   });
-
-  await enqueueSyncOperation(
-    "tasks",
-    "CREATE",
-    task.id,
-    task as unknown as Record<string, unknown>,
-  );
 }
 
 export async function updateLocalTaskStatus(
@@ -240,27 +218,11 @@ export async function updateLocalTaskStatus(
   await db.update(schema.tasks)
     .set({ status })
     .where(eq(schema.tasks.id, id));
-
-  const rows = (await db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).limit(1)) as unknown as Array<InferSelectModel<typeof schema.tasks>>;
-  const task = rows[0];
-  if (task) {
-    await enqueueSyncOperation("tasks", "UPDATE", id, {
-      id: task.id,
-      userId: task.userId,
-      leadId: task.leadId,
-      title: task.title,
-      description: task.description,
-      status: status,
-      dueDate: task.dueDate,
-      createdAt: task.createdAt,
-    } as unknown as Record<string, unknown>);
-  }
 }
 
 export async function deleteLocalTask(id: string) {
   const db = getDrizzle();
   await db.delete(schema.tasks).where(eq(schema.tasks.id, id));
-  await enqueueSyncOperation("tasks", "DELETE", id, { id });
 }
 
 // Drive Files Helpers
@@ -301,6 +263,10 @@ export async function enqueueSyncOperation(
   recordId: string,
   payload: Record<string, unknown>,
 ) {
+  if (table !== "campaigns") {
+    console.log(`Skipping enqueueing sync operation for table ${table} (local-only)`);
+    return;
+  }
   const db = getDrizzle();
   await db.insert(schema.syncQueue).values({
     table,
@@ -484,20 +450,6 @@ export async function createLocalLeadsBatch(leadsList: Lead[]) {
       const chunk = leadsValues.slice(i, i + chunkSize);
       await tx.insert(schema.leads).values(chunk);
     }
-
-    const syncValues = leadsList.map((lead) => ({
-      table: "leads" as const,
-      operation: "CREATE" as const,
-      recordId: lead.id,
-      payload: JSON.stringify(lead),
-      createdAt: Date.now(),
-      attempts: 0,
-    }));
-
-    for (let i = 0; i < syncValues.length; i += chunkSize) {
-      const chunk = syncValues.slice(i, i + chunkSize);
-      await tx.insert(schema.syncQueue).values(chunk);
-    }
   });
   console.log(`Batch created ${leadsList.length} leads in SQLite.`);
 }
@@ -506,12 +458,13 @@ export async function createLocalCampaign(campaign: {
   id: string;
   name: string;
   messageTemplateId: string | null;
+  messageBody: string | null;
   status: string;
   mediaUrl: string | null;
   scheduledAt: number | null;
   createdAt: number;
   updatedAt: number;
-}, recipientIds: string[]) {
+}, recipients: Array<{ phone: string; name?: string }>) {
   const db = getDrizzle();
   
   // Insert campaign record
@@ -519,6 +472,7 @@ export async function createLocalCampaign(campaign: {
     id: campaign.id,
     name: campaign.name,
     messageTemplateId: campaign.messageTemplateId,
+    messageBody: campaign.messageBody,
     status: campaign.status,
     mediaUrl: campaign.mediaUrl,
     scheduledAt: campaign.scheduledAt,
@@ -527,11 +481,12 @@ export async function createLocalCampaign(campaign: {
   });
 
   // Insert recipients in batch
-  if (recipientIds.length > 0) {
-    const batchRecipients = recipientIds.map((cid) => ({
+  if (recipients.length > 0) {
+    const batchRecipients = recipients.map((r) => ({
       id: `cr_${Math.random().toString(36).substring(2, 9)}`,
       campaignId: campaign.id,
-      contactId: cid,
+      phone: r.phone,
+      name: r.name || null,
       status: "pending",
     }));
     
@@ -549,7 +504,69 @@ export async function createLocalCampaign(campaign: {
     campaign.id,
     {
       ...campaign,
-      recipientIds,
+      recipients,
     } as unknown as Record<string, unknown>
   );
+}
+
+export async function vacuumDatabase() {
+  const db = getDrizzle();
+  await db.run(sql`VACUUM`);
+}
+
+export async function getContactCampaignHistory(phone: string) {
+  const db = getDrizzle();
+  
+  // 1. Get campaign recipients joined with campaigns
+  const campaignHistory = await db.select({
+    campaignName: schema.campaigns.name,
+    campaignId: schema.campaigns.id,
+    scheduledAt: schema.campaigns.scheduledAt,
+    status: schema.campaignRecipients.status,
+    attemptedAt: schema.campaignRecipients.attemptedAt,
+    completedAt: schema.campaignRecipients.completedAt,
+  })
+  .from(schema.campaignRecipients)
+  .innerJoin(schema.campaigns, eq(schema.campaignRecipients.campaignId, schema.campaigns.id))
+  .where(eq(schema.campaignRecipients.phone, phone))
+  .orderBy(desc(schema.campaignRecipients.attemptedAt));
+
+  // 2. Get direct sent messages log
+  const directLogs = await db.select()
+    .from(schema.sentMessagesLog)
+    .where(eq(schema.sentMessagesLog.recipientPhone, phone))
+    .orderBy(desc(schema.sentMessagesLog.timestamp));
+
+  return {
+    campaignHistory,
+    directLogs,
+  };
+}
+
+export async function getLocalCampaigns() {
+  const db = getDrizzle();
+  return await db.select().from(schema.campaigns).orderBy(desc(schema.campaigns.createdAt));
+}
+
+export async function deleteLocalCampaign(id: string) {
+  const db = getDrizzle();
+  
+  // 1. Get the campaign first to check for mediaUrl
+  const rows = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, id)).limit(1);
+  const campaign = rows[0];
+  if (campaign && campaign.mediaUrl) {
+    try {
+      const { deleteImageFromGoogleDrive } = await import("./drive");
+      await deleteImageFromGoogleDrive(campaign.mediaUrl);
+    } catch (driveErr) {
+      console.warn("Failed to delete campaign image from Google Drive:", driveErr);
+    }
+  }
+
+  // 2. Delete recipients and campaign record
+  await db.delete(schema.campaignRecipients).where(eq(schema.campaignRecipients.campaignId, id));
+  await db.delete(schema.campaigns).where(eq(schema.campaigns.id, id));
+
+  // 3. Enqueue sync DELETE operation so server deletes it too
+  await enqueueSyncOperation("campaigns", "DELETE", id, { id });
 }
